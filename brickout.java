@@ -6,6 +6,8 @@ import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import javax.swing.*;
 import javax.swing.event.*;
+import javax.swing.border.*;
+import javax.swing.plaf.basic.BasicSliderUI;
 import java.beans.*;
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -1372,6 +1374,7 @@ class Settings extends JPanel implements ChangeListener{
 	JTextField colorText;
 	JSlider slider;
 	BufferedImage background;
+	Settings thisSetting;
 	
 	public Settings(GUI g){
 		gui = g;
@@ -1380,6 +1383,7 @@ class Settings extends JPanel implements ChangeListener{
 		y = gui.screenHeight - 80 - height - 5;
 		icon = new Rectangle2D.Double(x, y, width, height);
 		
+		thisSetting = this;
 		this.setLayout(new BoxLayout(this, BoxLayout.PAGE_AXIS));
 		// setBackground(Color.black);
 		try{ background = ImageIO.read(SplashScreen.class.getResourceAsStream("images/BG5.jpg")); }
@@ -1400,10 +1404,28 @@ class Settings extends JPanel implements ChangeListener{
 		JTable table = new JTable(rowdata, colNames);
 		add(table, BorderLayout.CENTER);*/
 		
-		slider = new JSlider(0, 100);
+		setUpColorGroup();
+		
+		frame.setContentPane(this);
+		frame.pack();
+	}
+	
+	public void setUpColorGroup(){
+		slider = new JSlider(0, 100, 69);
 		slider.addChangeListener(this);
 		slider.setForeground(Color.white);
 		slider.setBorder(BorderFactory.createEmptyBorder(0,0,0,15));
+		slider.setUI(new BasicSliderUI(slider){
+			@Override
+			public void paintTrack(Graphics gg){
+				Graphics2D g = (Graphics2D)gg;
+				g.setPaint(Color.white);
+				trackRect.setBounds(trackRect.x, trackRect.y + trackRect.height / 2, trackRect.width, trackRect.height/2);
+				System.out.println(trackRect);
+				g.fill(trackRect);
+				//g.drawLine(trackRect.x, trackRect.y, trackRect.x + trackRect.width, trackRect.y + trackRect.height);
+			}
+		});
 
 		colorText = new JTextField("" + slider.getValue());
 		colorText.setColumns(2);
@@ -1414,7 +1436,7 @@ class Settings extends JPanel implements ChangeListener{
                 return getPreferredSize();
             }
             public Dimension getPreferredSize() {
-                return new Dimension(super.getPreferredSize().width,
+                return new Dimension(thisSetting.getPreferredSize().width,
                                      slider.getPreferredSize().height * 2);
             }
             public Dimension getMaximumSize() {
@@ -1424,16 +1446,16 @@ class Settings extends JPanel implements ChangeListener{
 		group.setOpaque(false);
 		group.setLayout(new BoxLayout(group, BoxLayout.LINE_AXIS));
 		//group.setBackground(Color.white);
-		group.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createTitledBorder("Paddle Color"),
-                        BorderFactory.createEmptyBorder(5,5,5,5)));
+		TitledBorder bdr = BorderFactory.createTitledBorder("Paddle Color");
+		bdr.setTitleColor(Color.white);
+		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
+  		
+        
 		group.add(slider);
 		group.add(colorText);
 		
 		add(group);
-		
-		frame.setContentPane(this);
-		frame.pack();
+	
 	}
 	
 	public void paintComponent(Graphics g){
@@ -1449,8 +1471,6 @@ class Settings extends JPanel implements ChangeListener{
 		colorText.setText("" + source.getValue());
 		gui.paddle.paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
 	}
-	
-    
 }
 
 class SplashScreen extends JPanel implements MouseListener{
