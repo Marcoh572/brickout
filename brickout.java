@@ -7,7 +7,7 @@ import java.awt.geom.Line2D;
 import javax.swing.*;
 import javax.swing.event.*;
 import javax.swing.border.*;
-import javax.swing.plaf.basic.BasicSliderUI;
+import javax.swing.plaf.metal.MetalSliderUI;
 import java.beans.*;
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -679,6 +679,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				if(activePup != null)
 					deactivateBuff();
 				paddle = new Paddle(paddle.autoMove);
+				setDifficulty(settings.speedSlider.getValue());
 			}
 			else
 				gameOver = true;
@@ -879,6 +880,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			alpha = 255-alpha;
 	
 		return new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha * 2);
+	}
+	public void setDifficulty(double newSpeed){
+		paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
+		
+		for(Ball ball: balls){
+			double theta = Math.toDegrees(Math.atan2(-ball.vy, ball.vx));
+			double dist = Math.hypot(  3 * newSpeed/50, 3 * newSpeed/50  );
+			ball.vx = dist * Math.cos(Math.toRadians(theta));
+			ball.vy = -dist * Math.sin(Math.toRadians(theta));
+			//System.out.println("newSpeed: " + newSpeed + "  vx: " + ball.vx + "  vy: " + ball.vy);
+		}
+		
+
 	}
 	
 	//Event methods
@@ -1313,19 +1327,7 @@ class PowerUp extends Paddle{
 		g.setFont(new Font("Courier", Font.BOLD, 30));
 		g.drawString(initials, (int)(x - width/2 + 2), (int)(y + height*.2));
 	}
-	
-	// public void displayMoreInfo(Graphics2D g){
-// 		if( p.type != PowerUp.Type.POWER_BALL ){
-// 			g.setFont(gameFont.deriveFont(25f));
-// 			bg.drawString(p.typeToString(), screenWidth * .1f, (float)(screenHeight - getFontSize(bg)/2));	
-// 		}
-// 		else{
-// 			g.setFont(gameFont.deriveFont(20f));
-// 			g.drawString(p.typeToString(), 5, (float)(screenHeight - getFontSize(bg)/2));			
-// 		}
-// 	
-// 	
-// 	}
+
 }
 
 /*class Settings extends JPopupMenu{
@@ -1371,8 +1373,8 @@ class Settings extends JPanel implements ChangeListener{
 	double x, y, width, height;
 	Rectangle2D icon;
 	GUI gui;
-	JTextField colorText;
-	JSlider slider;
+	JLabel colorLabel;
+	JSlider colorSlider, speedSlider;
 	BufferedImage background;
 	Settings thisSetting;
 	
@@ -1404,32 +1406,25 @@ class Settings extends JPanel implements ChangeListener{
 		JTable table = new JTable(rowdata, colNames);
 		add(table, BorderLayout.CENTER);*/
 		
-		setUpColorGroup();
+		setUpColorSettings();
+		setUpSpeedSettings();
 		
 		frame.setContentPane(this);
 		frame.pack();
 	}
 	
-	public void setUpColorGroup(){
-		slider = new JSlider(0, 100, 69);
-		slider.addChangeListener(this);
-		slider.setForeground(Color.white);
-		slider.setBorder(BorderFactory.createEmptyBorder(0,0,0,15));
-		slider.setUI(new BasicSliderUI(slider){
-			@Override
-			public void paintTrack(Graphics gg){
-				Graphics2D g = (Graphics2D)gg;
-				g.setPaint(Color.white);
-				trackRect.setBounds(trackRect.x, trackRect.y + trackRect.height / 2, trackRect.width, trackRect.height/2);
-				System.out.println(trackRect);
-				g.fill(trackRect);
-				//g.drawLine(trackRect.x, trackRect.y, trackRect.x + trackRect.width, trackRect.y + trackRect.height);
-			}
-		});
+	public void setUpColorSettings(){
+		colorSlider = new JSlider(0, 1000, 690);
+		colorSlider.setPreferredSize(new Dimension((int)(thisSetting.getPreferredSize().width * .8), colorSlider.getPreferredSize().height));
+		colorSlider.addChangeListener(this);
+		colorSlider.setOpaque(true);
+		colorSlider.setBackground(new Color(200, 200, 200, 50));
+		
 
-		colorText = new JTextField("" + slider.getValue());
-		colorText.setColumns(2);
-		colorText.setEditable(false);
+		colorLabel = new JLabel("" + colorSlider.getValue()/10);
+		colorLabel.setOpaque(false);
+		colorLabel.setForeground(Color.white);
+		colorLabel.setBorder(BorderFactory.createEmptyBorder(0,5,0,0));
 		
 		JPanel group = new JPanel(){
             public Dimension getMinimumSize() {
@@ -1437,7 +1432,7 @@ class Settings extends JPanel implements ChangeListener{
             }
             public Dimension getPreferredSize() {
                 return new Dimension(thisSetting.getPreferredSize().width,
-                                     slider.getPreferredSize().height * 2);
+                                     colorSlider.getPreferredSize().height * 2);
             }
             public Dimension getMaximumSize() {
                 return getPreferredSize();
@@ -1451,11 +1446,67 @@ class Settings extends JPanel implements ChangeListener{
 		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
   		
         
-		group.add(slider);
-		group.add(colorText);
+		group.add(colorSlider);
+		group.add(colorLabel);
 		
-		add(group);
+		this.add(group);
 	
+	}
+	public void setUpSpeedSettings(){
+		speedSlider = new JSlider(35, 100, 50);
+		speedSlider.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, speedSlider.getPreferredSize().height * 2));
+		speedSlider.addChangeListener(this);
+		speedSlider.setOpaque(false);			
+		speedSlider.setMajorTickSpacing(5);
+		speedSlider.setMinorTickSpacing(5);
+		speedSlider.setSnapToTicks(true);
+		speedSlider.setPaintTicks(true);
+		speedSlider.setPaintLabels(true);
+		
+		Hashtable<Integer, JLabel> labels = new Hashtable<Integer, JLabel>();
+		for(int i : Arrays.asList(35, 50, 75, 95)){
+			JLabel label = new JLabel();
+			label.setForeground(Color.white);
+			switch(i){
+				case 35:
+					label.setText("Low");
+					labels.put(i, label);
+				break;
+				case 50:
+					label.setText("Med");
+					labels.put(i, label);
+				break;
+				case 75:
+					label.setText("High");
+					labels.put(i, label);
+				break;
+				case 95:
+					label.setText("Very High");
+					labels.put(i, label);
+				break;
+			}
+		}
+		speedSlider.setLabelTable(labels);
+	
+		JPanel group = new JPanel(){
+            public Dimension getMinimumSize() {
+                return getPreferredSize();
+            }
+            public Dimension getPreferredSize() {
+                return new Dimension(thisSetting.getPreferredSize().width,
+                                     speedSlider.getPreferredSize().height * 15 / 10);
+            }
+            public Dimension getMaximumSize() {
+                return getPreferredSize();
+            }
+        };
+		group.setOpaque(false);
+		group.setLayout(new BoxLayout(group, BoxLayout.LINE_AXIS));
+		TitledBorder bdr = BorderFactory.createTitledBorder("Difficulty/Speed");
+		bdr.setTitleColor(Color.white);
+		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
+		group.add(speedSlider);
+		this.add(group);
 	}
 	
 	public void paintComponent(Graphics g){
@@ -1467,9 +1518,18 @@ class Settings extends JPanel implements ChangeListener{
 	@Override
 	public void stateChanged(ChangeEvent e){
 		JSlider source = (JSlider) e.getSource();
-		float value = source.getValue() / 100.0f; //gets percentage
-		colorText.setText("" + source.getValue());
-		gui.paddle.paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
+		
+		if(colorSlider.getValueIsAdjusting()){		
+			float value = source.getValue() / 1000.0f; //gets percentage
+			colorLabel.setText("" + source.getValue() /10);
+			gui.paddle.paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
+			colorSlider.setValueIsAdjusting(false);
+		}
+		else if(speedSlider.getValueIsAdjusting()){
+			double value = (double)source.getValue();
+			gui.setDifficulty(value);
+			speedSlider.setValueIsAdjusting(false);
+		}
 	}
 }
 
