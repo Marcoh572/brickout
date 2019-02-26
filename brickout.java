@@ -1369,7 +1369,7 @@ class PowerUp extends Paddle{
 }*/
 
 class Settings extends JPanel implements ChangeListener{
-	JFrame frame = new JFrame("Settings Window");
+	JFrame frame = new JFrame("Settings Window2");
 	double x, y, width, height;
 	Rectangle2D icon;
 	GUI gui;
