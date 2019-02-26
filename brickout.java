@@ -1375,6 +1375,7 @@ class Settings extends JPanel implements ChangeListener{
 	GUI gui;
 	JLabel colorLabel;
 	JSlider colorSlider, speedSlider;
+	Rectangle colorTrack, speedTrack;
 	BufferedImage background;
 	Settings thisSetting;
 	
@@ -1391,6 +1392,9 @@ class Settings extends JPanel implements ChangeListener{
 		try{ background = ImageIO.read(SplashScreen.class.getResourceAsStream("images/BG5.jpg")); }
 		catch(IOException e){ System.out.println("File Not Found"); }
 		initializeSettings();
+		colorTrack = new Rectangle(colorSlider.getX() + 7, colorSlider.getY() + colorSlider.getHeight()/2 - 1, colorSlider.getWidth() - 25, 2);
+		speedTrack = SwingUtilities.convertRectangle(speedSlider, speedSlider.getBounds(), this);
+ 		speedTrack.setRect(speedTrack.getX() * 2, speedTrack.getY() - speedTrack.getX()/2, speedTrack.getWidth() * .85, 2);
 	}
 
 	public void initializeSettings(){
@@ -1417,12 +1421,11 @@ class Settings extends JPanel implements ChangeListener{
 		colorSlider = new JSlider(0, 1000, 690);
 		colorSlider.setPreferredSize(new Dimension((int)(thisSetting.getPreferredSize().width * .8), colorSlider.getPreferredSize().height));
 		colorSlider.addChangeListener(this);
-		colorSlider.setOpaque(true);
-		colorSlider.setBackground(new Color(200, 200, 200, 50));
+		colorSlider.setOpaque(false);
+		colorSlider.setBorder(BorderFactory.createEmptyBorder(0,0,0,5));
 		
 
 		colorLabel = new JLabel("" + colorSlider.getValue()/10);
-		colorLabel.setOpaque(false);
 		colorLabel.setForeground(Color.white);
 		colorLabel.setBorder(BorderFactory.createEmptyBorder(0,5,0,0));
 		
@@ -1440,7 +1443,6 @@ class Settings extends JPanel implements ChangeListener{
         };
 		group.setOpaque(false);
 		group.setLayout(new BoxLayout(group, BoxLayout.LINE_AXIS));
-		//group.setBackground(Color.white);
 		TitledBorder bdr = BorderFactory.createTitledBorder("Paddle Color");
 		bdr.setTitleColor(Color.white);
 		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
@@ -1448,13 +1450,13 @@ class Settings extends JPanel implements ChangeListener{
         
 		group.add(colorSlider);
 		group.add(colorLabel);
+		group.add(Box.createRigidArea(new Dimension(10, 0)));
 		
 		this.add(group);
-	
 	}
 	public void setUpSpeedSettings(){
 		speedSlider = new JSlider(35, 100, 50);
-		speedSlider.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, speedSlider.getPreferredSize().height * 2));
+		//speedSlider.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, speedSlider.getPreferredSize().height * 2));
 		speedSlider.addChangeListener(this);
 		speedSlider.setOpaque(false);			
 		speedSlider.setMajorTickSpacing(5);
@@ -1509,10 +1511,14 @@ class Settings extends JPanel implements ChangeListener{
 		this.add(group);
 	}
 	
-	public void paintComponent(Graphics g){
-		g.setColor(Color.cyan);
+	public void paintComponent(Graphics gg){
+		Graphics2D g = (Graphics2D) gg;
 		g.drawImage(background, 0, 0, getPreferredSize().width, getPreferredSize().height, this);
-		//g.fillRect(0, 0, getPreferredSize().width, getPreferredSize().height);
+		g.setColor(Color.white);
+		
+ 		g.fill(colorTrack); 		
+ 		g.fill(speedTrack);
+ 		
 	}
 	
 	@Override
