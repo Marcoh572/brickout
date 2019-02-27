@@ -14,8 +14,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-//test branch version
-
 public class brickout {
 	static final int FPS = 50;
 	static final int timeStep = (int)1000/FPS;
@@ -78,12 +76,12 @@ public class brickout {
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	static int screenWidth, screenHeight; 
 	int rows = 2, cols = 7, margin = 4, frames = 0, fps = 0, bgIndex = 1;
-	int level = 1, score = 0, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0;
+	int level = 1, score = 0, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
 	Point mousePos = null;
 	BufferedImage buffer, background;
 	Graphics2D bg;
-	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0;
-	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true;
+	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
+	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true;
 	Rectangle2D bottomBar, intersection;
 	Paddle paddle;
 	Settings settings;
@@ -111,6 +109,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		bottomBar = new Rectangle2D.Double(0, screenHeight - 80, screenWidth, 80);
 		paddle = new Paddle();
+		paddleVX = paddle.vx;
 		balls.add(new Ball( ballsize/2 ));
 		brickheight = this.populateBricks();
 		try{ background = ImageIO.read(GUI.class.getResourceAsStream("images/BG1.jpg")); }
@@ -362,6 +361,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void initializeKeyBindings(){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
+		
+		inputs.clear();
+		actions.clear();
 	
 		inputs.put(KeyStroke.getKeyStroke("1"), "Activate PowerUp 1");
 		inputs.put(KeyStroke.getKeyStroke("2"), "Activate PowerUp 2");
@@ -392,10 +394,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public void actionPerformed(ActionEvent e){
 				if(paddle.x - paddle.width/2 - 5 < 0)
 					paddle.vx = 0;
-				else if (paddle.autoMove)
-					paddle.vx = -1 * Math.abs(paddle.vx);
 				else
-					paddle.vx = -5;
+					paddle.vx = -1 * Math.abs(paddleVX);
 				
 			}
 		};
@@ -403,20 +403,16 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public void actionPerformed(ActionEvent e){	
 				if(paddle.x + paddle.width/2 + 5> screenWidth)
 					paddle.vx = 0;
-				else if (paddle.autoMove)
-					paddle.vx = Math.abs(paddle.vx);
 				else
-					paddle.vx = 5;
+					paddle.vx = Math.abs(paddleVX);
 			}
 		};		
 		actions.put("Stop Paddle", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){			
 				if(!paddle.autoMove)
 					paddle.vx = 0;
-				else if (paddle.collidingLeftEdge())
-					paddle.vx = 5;
-				else if (paddle.collidingRightEdge())
-					paddle.vx = -5;
+				else if (paddle.collidingLeftEdge() || paddle.collidingRightEdge())
+					paddle.vx = -paddleVX;
 			}
 		});	
 		actions.put("Move Left", moveLeft);
@@ -527,11 +523,12 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			});
 			actions.put("Toggle Paddle AutoMove", new AbstractAction(){
 				public void actionPerformed(ActionEvent e){			
-					paddle.autoMove = !paddle.autoMove;
-					if(paddle.autoMove)
-						paddle.vx = -5;
-					else
-						paddle.vx = 0;
+					// paddle.autoMove = !paddle.autoMove;
+// 					if(paddle.autoMove)
+// 						paddle.vx = -5;
+// 					else
+// 						paddle.vx = 0;
+					setAutoMove( !paddle.autoMove );
 				}
 			});	
 			actions.put("Fire Balls", new AbstractAction(){
@@ -544,8 +541,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			});
 			actions.put("Tester", new AbstractAction(){
 				public void actionPerformed(ActionEvent e){
-					lives--;
-					//changeLevel();
+					//lives--;
+					changeLevel();
 					//if(activePup == null){
 						//PowerUp p = new PowerUp(screenWidth/2, screenHeight * .667, PowerUp.Type.randomType());
 	// 					p.vy = 0;
@@ -597,7 +594,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			JMenuItem control = new JMenuItem(in);
 			control.setEnabled(false);
 			settings.add(control);
-		}*/ //settings as popup
+		}*/ //settings as popup*/
 		
 		
 		
@@ -643,6 +640,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public double populateBricks(){ //populate bricks array and return brick height
 		bricks.clear();
 		exposedBricks.clear();
+		numLocked = 0;
 		for(int i = 0; i < rows; i++){
 			bricks.add(new ArrayList<Brick> ());
 			int brickType = rows - i - 1;
@@ -653,9 +651,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				temp.setColor(colors[brickType]);
 				
 				int rollLocked = roll.nextInt(50 - brickType*3);
-				if(rollLocked == 0){ 
+				if(rollLocked == 0 && lockedEnabled){ 
 					temp.locked = true; 
 					temp.setColor(Color.gray);
+					numLocked++;
 				}
 				
 				if( i == rows-1 ){
@@ -884,7 +883,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		return new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha * 2);
 	}
 	public void setDifficulty(double newSpeed){
-		paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
+		if(paddle.autoMove)
+			paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
+		
+		paddleVX = Math.signum(paddleVX) * newSpeed / 10.0;	
 		
 		for(Ball ball: balls){
 			double theta = Math.toDegrees(Math.atan2(-ball.vy, ball.vx));
@@ -895,6 +897,57 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		}
 		
 
+	}
+	
+	
+	public boolean getAutoMove(){ return paddle.autoMove; }
+	public void setAutoMove(boolean b){ 
+		paddle.autoMove = b; 
+		if(b)
+			paddle.vx = paddleVX;
+		else
+			paddle.vx = 0;
+		
+	}
+	public void setLocked(boolean b){
+		lockedEnabled = b;
+		
+		if (b == false){ //Make locked bricks no longer locked
+			bricks.forEach( bList -> bList.forEach( brick -> {
+				if(brick.locked){
+					brick.locked = false;
+					brick.setColor(colors[brick.type]);
+				}
+			}));
+		}
+		else if(numLocked == 0){ //put in some random locked bricks 
+			bricks.forEach( bList -> bList.forEach( brick -> {
+				int rollLocked = roll.nextInt(50 - brick.type*3);
+				if(rollLocked == 0){
+					brick.locked = true;
+					brick.setColor(Color.gray);
+				}
+			}));
+		}
+		else{ //put same number of locked bricks as before
+			int c = numLocked;
+			while (c > 0){
+				for( ArrayList<Brick> bList : bricks ){
+					if(c > 0){
+						for(Brick brick : bList){
+							int rollLocked = roll.nextInt(50 - brick.type*3);
+							if(rollLocked == 0 && c > 0){
+								brick.locked = true;
+								brick.setColor(Color.gray);
+								c--;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	
 	}
 	
 	//Event methods
@@ -1370,7 +1423,7 @@ class PowerUp extends Paddle{
 
 }*/
 
-class Settings extends JTabbedPane implements ChangeListener{
+class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	JFrame frame = new JFrame("Settings Window");
 	JPanel tab1 = new JPanel();
 	JPanel tab2 = new JPanel();
@@ -1379,9 +1432,12 @@ class Settings extends JTabbedPane implements ChangeListener{
 	GUI gui;
 	JLabel colorLabel;
 	JSlider colorSlider, speedSlider;
+	JButton autoMove, cheats, locked;
+	JTable table;
 	Rectangle colorTrack, speedTrack;
 	BufferedImage background;
 	Settings thisSetting;
+	Color paddleColor = Color.white;
 	
 	public Settings(GUI g){
 		gui = g;
@@ -1397,30 +1453,17 @@ class Settings extends JTabbedPane implements ChangeListener{
 		try{ background = ImageIO.read(SplashScreen.class.getResourceAsStream("images/BG5.jpg")); }
 		catch(IOException e){ System.out.println("File Not Found"); }
 		initializeSettings();
+		setUpDrawables();
 		
-		//colorTrack = new Rectangle(colorSlider.getX() + 7, colorSlider.getY() + colorSlider.getHeight()/2 - 1, colorSlider.getWidth() - 25, 2);
-		colorTrack = SwingUtilities.convertRectangle(colorSlider, colorSlider.getBounds(), tab1);
-		colorTrack.setRect(colorTrack.getX() * 1.65, colorTrack.getY() + colorTrack.getHeight() - 4, colorTrack.getWidth() * .907, 3);
-		speedTrack = SwingUtilities.convertRectangle(speedSlider, speedSlider.getBounds(), tab1);
-  		speedTrack.setRect(speedTrack.getX() * 2.5, speedTrack.getY() + speedTrack.getHeight()/2 - 3, speedTrack.getWidth() * .84, 2);
 	}
 
 	public void initializeSettings(){
 		setPreferredSize(new Dimension((int)(600 * gui.gameScale), (int)(800*gui.gameScale)));
-		
-		/*Object rowdata[][] = new Object[gui.inputList.size() + 5][2];
-		for(int i = 0; i < gui.inputList.size(); i++){
-			String[] str = gui.inputList.get(i).split("\\s-\\s");
-			rowdata[i+4][0] = "\t" + str[0];
-			rowdata[i+4][1] = str[1];
-		}
-		Object colNames[] = {"Col1", "Col2"};
-		JTable table = new JTable(rowdata, colNames);
-		add(table, BorderLayout.CENTER);*/
-		
+				
 		setUpColorSettings();
 		setUpSpeedSettings();
-		
+		setUpToggles();
+		setUpControlList();
 		
 		this.addTab("General", tab1);
 		this.addTab("Controls", tab2);
@@ -1428,6 +1471,9 @@ class Settings extends JTabbedPane implements ChangeListener{
 		frame.setContentPane(this);
 		frame.pack();
 		frame.setResizable(false);
+		
+		// frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+// 		frame.setVisible(true);
 	}
 	
 	public void setUpColorSettings(){
@@ -1463,7 +1509,7 @@ class Settings extends JTabbedPane implements ChangeListener{
         
 		group.add(colorSlider);
 		group.add(colorLabel);
-		group.add(Box.createRigidArea(new Dimension(10, 0)));
+		group.add(Box.createRigidArea(new Dimension(10, 10)));
 		
 		tab1.add(group);
 	}
@@ -1523,14 +1569,82 @@ class Settings extends JTabbedPane implements ChangeListener{
 		group.add(speedSlider);
 		tab1.add(group);
 	}
+	public void setUpToggles(){
+		autoMove = new JButton("Paddle Auto-Move");
+		cheats = new JButton("Cheats");
+		locked = new JButton("Locked Bricks");
+	
+		autoMove.setSelected(gui.getAutoMove());
+		cheats.setSelected(gui.cheatsActive);
+		locked.setSelected(gui.lockedEnabled);
+		
+		autoMove.setForeground(Color.white);
+		cheats.setForeground(Color.white);
+		locked.setForeground(Color.white);
+		
+		autoMove.addActionListener(this);
+		autoMove.setActionCommand("auto");
+		cheats.addActionListener(this);
+		cheats.setActionCommand("cheat");
+		locked.addActionListener(this);
+		locked.setActionCommand("lock");
+		
+		JPanel group = new JPanel(){
+            public Dimension getMinimumSize() {
+                return getPreferredSize();
+            }
+            public Dimension getPreferredSize() {
+                return new Dimension(thisSetting.getPreferredSize().width, colorSlider.getPreferredSize().height * 2);
+            }
+            public Dimension getMaximumSize() {
+                return getPreferredSize();
+            }
+        };
+		group.setOpaque(false);
+		group.setLayout(new BoxLayout(group, BoxLayout.LINE_AXIS));
+		TitledBorder bdr = BorderFactory.createTitledBorder("Toggleable Settings");
+		bdr.setTitleColor(Color.white);
+		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
+		group.add(autoMove);
+		group.add(Box.createHorizontalGlue());
+		group.add(cheats);
+		group.add(Box.createHorizontalGlue());
+		group.add(locked);
+		tab1.add(group);
+	}
+	
+	public void setUpControlList(){
+		if(table != null)
+			tab2.remove(table);
+	
+		Object rowdata[][] = new Object[gui.inputList.size() + 5][2];
+		for(int i = 0; i < gui.inputList.size(); i++){
+			String[] str = gui.inputList.get(i).split("\\s-\\s");
+			rowdata[i+4][0] = "\t" + str[0];
+			rowdata[i+4][1] = str[1];
+		}
+		Object colNames[] = {"Col1", "Col2"};
+		table = new JTable(rowdata, colNames);
+		table.setPreferredSize(new Dimension(getPreferredSize().width * 6 / 10, getPreferredSize().height));
+		table.getColumnModel().getColumn(0).setMaxWidth(80);
+		tab2.add(table);
+	}
+	public void setUpDrawables(){
+		colorTrack = SwingUtilities.convertRectangle(colorSlider, colorSlider.getBounds(), tab1);
+		colorTrack.setRect(colorTrack.getX() * 1.65, colorTrack.getY() + colorTrack.getHeight() - 4, colorTrack.getWidth() * .907, 3);
+		speedTrack = SwingUtilities.convertRectangle(speedSlider, speedSlider.getBounds(), tab1);
+  		speedTrack.setRect(speedTrack.getX() * 2.5, speedTrack.getY() + speedTrack.getHeight()/2 - 3, speedTrack.getWidth() * .84, 2);
+	}
 	
 	public void paintComponent(Graphics gg){
 		Graphics2D g = (Graphics2D) gg;
 		g.drawImage(background, 0, 0, getPreferredSize().width, getPreferredSize().height, this);
-		g.setColor(Color.white);
 		
+		g.setColor(paddleColor);
  		g.fill(colorTrack); 		
+		g.setColor(Color.white);
 		g.fill(speedTrack);
+		
  		super.paintComponent(gg);
 	}
 	
@@ -1541,7 +1655,9 @@ class Settings extends JTabbedPane implements ChangeListener{
 		if(colorSlider.getValueIsAdjusting()){		
 			float value = source.getValue() / 1000.0f; //gets percentage
 			colorLabel.setText("" + source.getValue() /10);
-			gui.paddle.paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
+			paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
+			gui.paddle.paddleColor = paddleColor;
+			repaint();
 			colorSlider.setValueIsAdjusting(false);
 		}
 		else if(speedSlider.getValueIsAdjusting()){
@@ -1549,6 +1665,37 @@ class Settings extends JTabbedPane implements ChangeListener{
 			gui.setDifficulty(value);
 			speedSlider.setValueIsAdjusting(false);
 		}
+	}
+	
+	@Override
+	public void actionPerformed(ActionEvent e){
+		if("auto".equals(e.getActionCommand())){
+			autoMove.setSelected(!autoMove.isSelected());
+			gui.setAutoMove(autoMove.isSelected());
+			if(autoMove.isSelected())
+				autoMove.setForeground(Color.white);
+			else
+				autoMove.setForeground(Color.black);
+		}
+		else if("cheat".equals(e.getActionCommand())){
+			cheats.setSelected(!cheats.isSelected());
+			gui.cheatsActive = cheats.isSelected();
+			gui.initializeKeyBindings();
+			setUpControlList();
+			if(cheats.isSelected())
+				cheats.setForeground(Color.white);
+			else
+				cheats.setForeground(Color.black);
+		}
+		else if("lock".equals(e.getActionCommand())){
+			locked.setSelected(!locked.isSelected());
+			gui.setLocked(locked.isSelected());	
+			if(locked.isSelected())
+				locked.setForeground(Color.white);
+			else
+				locked.setForeground(Color.black);	
+		}
+	
 	}
 }
 
