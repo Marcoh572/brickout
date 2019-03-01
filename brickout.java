@@ -7,7 +7,7 @@ import java.awt.geom.Line2D;
 import javax.swing.*;
 import javax.swing.event.*;
 import javax.swing.border.*;
-import javax.swing.plaf.metal.MetalSliderUI;
+import javax.swing.table.*;
 import java.beans.*;
 import javax.imageio.ImageIO;
 import java.io.File;
@@ -82,6 +82,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	Graphics2D bg;
 	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
 	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true;
+	InputMap savedInputs;
+	ActionMap savedActions;
 	Rectangle2D bottomBar, intersection;
 	Paddle paddle;
 	Settings settings;
@@ -116,7 +118,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		catch(IOException e){ System.out.println("File Not Found"); }
 
 		this.initializeKeyBindings();
-		this.initializeSettings();
 		setPreferredSize(new Dimension((int)(screenWidth * gameScale), (int)(screenHeight * gameScale)));		
 		addComponentListener(new ComponentAdapter(){
 			@Override
@@ -362,6 +363,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
 		
+		if(inputs.size() != 0 && actions.size() != 0){
+			savedInputs = inputs;
+			savedActions = actions;
+		}
+		
 		inputs.clear();
 		actions.clear();
 	
@@ -377,14 +383,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, false), "Move Left");
 		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, 0, false), "Move Right");
 		inputs.put(KeyStroke.getKeyStroke("P"), "Pause");
-		inputs.put(KeyStroke.getKeyStroke("SPACE"), "Player Action");
+		inputs.put(KeyStroke.getKeyStroke("SPACE"), "Action");
 		inputs.put(KeyStroke.getKeyStroke("X"), "Cancel PowerUp");
 		inputs.put(KeyStroke.getKeyStroke("R"), "Replay");
 		inputs.put(KeyStroke.getKeyStroke("F"), "Show Details");
 		
 		if(cheatsActive){
-			inputs.put(KeyStroke.getKeyStroke("UP"), "Inc Paddle Speed / Ball Angle");
-			inputs.put(KeyStroke.getKeyStroke("DOWN"), "Dec Paddle Speed / Ball Angle");
+			inputs.put(KeyStroke.getKeyStroke("UP"), "Paddle Speed ↑ / Ball Angle");
+			inputs.put(KeyStroke.getKeyStroke("DOWN"), "Paddle Speed ↓ / Ball Angle");
 			inputs.put(KeyStroke.getKeyStroke("V"), "Toggle Paddle AutoMove");
 			inputs.put(KeyStroke.getKeyStroke("B"), "Fire Balls");
 			inputs.put(KeyStroke.getKeyStroke("M"), "Tester");
@@ -424,7 +430,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				startTime = System.currentTimeMillis();
 			}
 		});
-		actions.put("Player Action", new AbstractAction(){
+		actions.put("Action", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				if(paused){
 					paused = false; 
@@ -489,7 +495,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		});	
 		
 		if(cheatsActive){
-			actions.put("Inc Paddle Speed / Ball Angle", new AbstractAction(){
+			actions.put("Paddle Speed ↑ / Ball Angle", new AbstractAction(){
 				public void actionPerformed(ActionEvent e){
 					if(paddle.hasBallStuck){
 						for( Ball ball : balls ){
@@ -505,7 +511,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						paddle.vx = Math.signum(paddle.vx) * (Math.abs(paddle.vx) + .5);
 				}
 			});
-			actions.put("Dec Paddle Speed / Ball Angle", new AbstractAction(){
+			actions.put("Paddle Speed ↓ / Ball Angle", new AbstractAction(){
 				public void actionPerformed(ActionEvent e){
 					if(paddle.hasBallStuck){
 						for( Ball ball : balls ){
@@ -556,48 +562,37 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			});		
 		}
 		
+		populateInputList();
 		
+	}
+	public void populateInputList(){
 		//Add Input Map contents to Input List
-		java.util.List<KeyStroke> keys = Arrays.asList(inputs.keys());
+		java.util.List<KeyStroke> keys = Arrays.asList(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys());
 		inputList.clear();
-		keys.sort(Comparator.comparing(KeyStroke::getKeyCode));
+		//keys.sort(Comparator.comparing(KeyStroke::getKeyCode));
 		keys.forEach( k -> {
 			String keyName = KeyEvent.getKeyText(k.getKeyCode());
 			if(keyName.equals("␣")) { keyName = "Space"; }
 			if(k.isOnKeyRelease() == false )//don't show released keys
-				inputList.add("" + keyName + "\t-\t" + inputs.get(k));
+				inputList.add("" + keyName + "\t-\t" + getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).get(k));
 		});
+		inputList.sort((s1, s2) -> s1.substring(s1.lastIndexOf("-\t")).compareTo(s2.substring(s2.lastIndexOf("-\t"))));
 		//inputList.forEach( in -> System.out.println(in));
-		
-		
-		
-		
 	}
-	public void initializeSettings(){
+	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){
+		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		
-		
- 		/*settings.add(new JCheckBoxMenuItem(new AbstractAction(){
-			@Override
-			public void actionPerformed(ActionEvent e){
-				settings.remove(settings.getSubElements().length - 1);
-				//settings.reshow = true;
+		try{
+			if( inputs.get(oldKey) != null ){
+				inputs.put(newKey, inputs.get(oldKey));
+				inputs.remove(oldKey);
+				populateInputList();
+				inputList.forEach( in -> System.out.println(in));
+				return true;
 			}
-		}));
+		}catch(NullPointerException e) { System.out.println("That key does not exist in the Input Map"); }
 		
-		
-		JMenuItem controlList = new JMenuItem("Controls");
-		controlList.setEnabled(false);
-		settings.add(controlList);
-		
-		
-		for(String in : inputList){
-			JMenuItem control = new JMenuItem(in);
-			control.setEnabled(false);
-			settings.add(control);
-		}*/ //settings as popup*/
-		
-		
-		
+		return false;
 	}
 	
 	
@@ -926,6 +921,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				if(rollLocked == 0){
 					brick.locked = true;
 					brick.setColor(Color.gray);
+					numLocked++;
 				}
 			}));
 		}
@@ -936,7 +932,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					if(c > 0){
 						for(Brick brick : bList){
 							int rollLocked = roll.nextInt(50 - brick.type*3);
-							if(rollLocked == 0 && c > 0){
+							if(rollLocked == 0 && c > 0 && brick.locked == false){
 								brick.locked = true;
 								brick.setColor(Color.gray);
 								c--;
@@ -944,6 +940,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 							}
 						}
 					}
+					else
+						break;
 				}
 			}
 		}
@@ -1423,7 +1421,7 @@ class PowerUp extends Paddle{
 
 }*/
 
-class Settings extends JTabbedPane implements ChangeListener, ActionListener{
+class Settings extends JTabbedPane implements ChangeListener, ActionListener, TableModelListener{
 	JFrame frame = new JFrame("Settings Window");
 	JPanel tab1 = new JPanel();
 	JPanel tab2 = new JPanel();
@@ -1438,6 +1436,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	BufferedImage background;
 	Settings thisSetting;
 	Color paddleColor = Color.white;
+	String[][] rowdata;
 	
 	public Settings(GUI g){
 		gui = g;
@@ -1458,7 +1457,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	}
 
 	public void initializeSettings(){
-		setPreferredSize(new Dimension((int)(600 * gui.gameScale), (int)(800*gui.gameScale)));
+		setPreferredSize(new Dimension(450, 600));
 				
 		setUpColorSettings();
 		setUpSpeedSettings();
@@ -1466,7 +1465,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		setUpControlList();
 		
 		this.addTab("General", tab1);
-		this.addTab("Controls", tab2);
+		//this.addTab("Controls", tab2);
 		
 		frame.setContentPane(this);
 		frame.pack();
@@ -1578,9 +1577,9 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		cheats.setSelected(gui.cheatsActive);
 		locked.setSelected(gui.lockedEnabled);
 		
-		autoMove.setForeground(Color.white);
-		cheats.setForeground(Color.white);
-		locked.setForeground(Color.white);
+		if(autoMove.isSelected()){ autoMove.setForeground(Color.white); }
+		if(cheats.isSelected()){ cheats.setForeground(Color.white); }
+		if(locked.isSelected()){ locked.setForeground(Color.white); }
 		
 		autoMove.addActionListener(this);
 		autoMove.setActionCommand("auto");
@@ -1611,40 +1610,162 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		group.add(Box.createHorizontalGlue());
 		group.add(locked);
 		tab1.add(group);
-	}
-	
+	}	
 	public void setUpControlList(){
 		if(table != null)
-			tab2.remove(table);
-	
-		Object rowdata[][] = new Object[gui.inputList.size() + 5][2];
+			tab1.remove(3);
+		
+		//Create Table
+		rowdata = new String[gui.inputList.size()][2];
+		Object[][] rowdataCopy = new Object[gui.inputList.size()][2];
 		for(int i = 0; i < gui.inputList.size(); i++){
 			String[] str = gui.inputList.get(i).split("\\s-\\s");
-			rowdata[i+4][0] = "\t" + str[0];
-			rowdata[i+4][1] = str[1];
+			rowdata[i][0] = str[0];
+			rowdata[i][1] = str[1];
+			// rowdataCopy[i][0] = gui.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys()[i];
+			//rowdataCopy[i][1] = str[1];
+			rowdataCopy[i] = Arrays.copyOf(rowdata[i], 2);
 		}
-		Object colNames[] = {"Col1", "Col2"};
-		table = new JTable(rowdata, colNames);
-		table.setPreferredSize(new Dimension(getPreferredSize().width * 6 / 10, getPreferredSize().height));
-		table.getColumnModel().getColumn(0).setMaxWidth(80);
-		tab2.add(table);
+		String colNames[] = {"Key", "Action"};
+		table = new JTable(new DefaultTableModel(rowdataCopy, colNames){
+			@Override
+			public boolean isCellEditable(int row, int col){
+				if(col == 10)
+					return true;
+				return false;
+			}
+		});
+		table.getModel().addTableModelListener(this);
+		
+		table.setOpaque(false); //set transparency
+		table.setShowGrid(false);
+		table.setRowHeight( table.getRowHeight() + 1 );
+		table.setFont(new Font("Arial", Font.PLAIN, 15));
+		table.setForeground(Color.white); //set text color
+		
+		table.getColumnModel().getColumn(0).setCellRenderer(getRenderer(SwingConstants.CENTER)); //Center Align Keys
+		table.getColumnModel().getColumn(1).setCellRenderer(getRenderer(SwingConstants.LEFT)); //Left Align Actions
+		table.getColumnModel().getColumn(0).setMaxWidth(80); //force key column width
+ 		table.getColumnModel().getColumn(1).setMinWidth(230);//force Action col width
+		
+		table.getColumnModel().setSelectionModel(new DefaultListSelectionModel() {
+			private boolean isSelectable(int row, int col) {
+				if(col == 1)
+					return false;
+				return true;
+			}
+
+			@Override
+			public void setSelectionInterval(int index0, int index1) {
+				if(isSelectable(index0, index1)) {
+					super.setSelectionInterval(index0, index1);
+				}
+			}
+
+			@Override
+			public void addSelectionInterval(int index0, int index1) {
+				if(isSelectable(index0, index1)) {
+					super.addSelectionInterval(index0, index1);
+				}
+			}
+		}); //prevent Action selection
+		
+		table.getTableHeader().setResizingAllowed(false);
+		table.getTableHeader().setReorderingAllowed(false);
+		((DefaultTableCellRenderer)table.getTableHeader().getDefaultRenderer()).setHorizontalAlignment(SwingConstants.CENTER);
+		table.getTableHeader().setOpaque(false); //set transparency
+		table.getTableHeader().setBackground(new Color(1.0f, 1.0f, 1.0f, 0.1f));
+		table.getTableHeader().setFont(new Font("Arial", Font.BOLD, 20));
+		table.getTableHeader().setForeground(new Color(255, 209, 0)); //set text color to Gold
+		
+		handleTableIO();
+		
+		JPanel group = new JPanel();
+		group.setOpaque(false);
+		// group.setLayout(new BoxLayout(group, BoxLayout.PAGE_AXIS));
+ 		//group.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, tab1.getHeight() - group.getY()));
+		//group.setAlignmentX(Component.CENTER_ALIGNMENT);
+		TitledBorder bdr = BorderFactory.createTitledBorder("Control List");
+		bdr.setTitleColor(Color.white);
+		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
+		group.add(table.getTableHeader());
+		group.add(table, BorderLayout.CENTER);
+		
+		tab1.add(group);
 	}
+
 	public void setUpDrawables(){
 		colorTrack = SwingUtilities.convertRectangle(colorSlider, colorSlider.getBounds(), tab1);
 		colorTrack.setRect(colorTrack.getX() * 1.65, colorTrack.getY() + colorTrack.getHeight() - 4, colorTrack.getWidth() * .907, 3);
 		speedTrack = SwingUtilities.convertRectangle(speedSlider, speedSlider.getBounds(), tab1);
   		speedTrack.setRect(speedTrack.getX() * 2.5, speedTrack.getY() + speedTrack.getHeight()/2 - 3, speedTrack.getWidth() * .84, 2);
 	}
+	public void handleTableIO(){
+		/*InputMap im = table.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
+		ActionMap am = table.getActionMap();
+		TableModel model = table.getModel();
+
+		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, true), "left");
+		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "right");
+		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "up");
+		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "down");
+		
+		am.put("left", new AbstractAction(){
+			public void actionPerformed(ActionEvent e){
+				//if(table.getSelectedRow() != -1 )
+					model.setValueAt("←", table.getSelectedRow(), 0);
+			}
+		});
+		am.put("right", new AbstractAction(){
+			public void actionPerformed(ActionEvent e){
+				if(table.getSelectedRow() != -1 )
+					model.setValueAt("→", table.getSelectedRow(), 0);
+			}
+		});
+		am.put("up", new AbstractAction(){
+			public void actionPerformed(ActionEvent e){
+				if(table.getSelectedRow() != -1 )
+					model.setValueAt("↑", table.getSelectedRow(), 0);
+			}
+		});
+		am.put("down", new AbstractAction(){
+			public void actionPerformed(ActionEvent e){
+				if(table.getSelectedRow() != -1 )
+					model.setValueAt("↓", table.getSelectedRow(), 0);
+			}
+		});
+		*/
+		table.addKeyListener(new KeyAdapter(){
+			public void keyPressed(KeyEvent e){
+				System.out.println(e.getKeyCode());
+				if(table.getSelectedRow() != -1 && e.getKeyCode() >= 32 && e.getKeyCode() <= 90){
+					String newKey = e.getKeyText(e.getKeyCode());
+					if(newKey.equals("␣")) { newKey = "Space"; }
+					table.setValueAt(newKey, table.getSelectedRow(), 0);
+				}
+			}
+		});
+		
+	}
+	public DefaultTableCellRenderer getRenderer(int alignment){
+		DefaultTableCellRenderer render = new DefaultTableCellRenderer();
+ 		render.setHorizontalAlignment(alignment);
+ 		render.setOpaque(false);
+		return render;
+	}
 	
 	public void paintComponent(Graphics gg){
 		Graphics2D g = (Graphics2D) gg;
 		g.drawImage(background, 0, 0, getPreferredSize().width, getPreferredSize().height, this);
 		
-		g.setColor(paddleColor);
- 		g.fill(colorTrack); 		
-		g.setColor(Color.white);
-		g.fill(speedTrack);
-		
+		if(colorTrack != null){
+			g.setColor(paddleColor);
+	 		g.fill(colorTrack);
+	 	}else { System.out.println("colorTrack is null"); }
+	 	if(speedTrack != null){
+			g.setColor(Color.white);
+			g.fill(speedTrack);
+		}else { System.out.println("speedTrack is null"); }	
  		super.paintComponent(gg);
 	}
 	
@@ -1696,6 +1817,36 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 				locked.setForeground(Color.black);	
 		}
 	
+	}
+	
+	@Override
+	public void tableChanged(TableModelEvent e){
+		TableModel source = (TableModel) e.getSource();
+		int row = e.getFirstRow();
+		int col = e.getColumn();	
+		String oldKey = rowdata[row][col];
+		String newKey = ((String)source.getValueAt(row, col));
+		System.out.println(oldKey + "   " + newKey);
+		
+		if(!newKey.equals(newKey.toUpperCase()) && newKey.length() == 1){
+			source.setValueAt(newKey.toUpperCase(), row, col);
+			return;
+		}
+		
+		if(!oldKey.equals(newKey)){
+			for(int i = 0; i < gui.inputList.size(); i++){
+				if( rowdata[i][0].equalsIgnoreCase(newKey)){
+					source.setValueAt(oldKey, row, col);
+					return;
+				}
+			}
+			//next bit happens only if a valid key
+			rowdata[row][col] = newKey;
+			if(newKey.equals("Space")) { newKey = "pressed SPACE"; }
+			if(oldKey.equals("Space")) { oldKey = "pressed SPACE"; }
+			System.out.println("Replacing " + KeyStroke.getKeyStroke(oldKey) + "  with  " + KeyStroke.getKeyStroke(newKey));
+			gui.updateKeyBind(KeyStroke.getKeyStroke(oldKey), KeyStroke.getKeyStroke(newKey));
+		}	
 	}
 }
 
