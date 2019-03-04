@@ -1757,6 +1757,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 					String newKey = KeyEvent.getKeyText(e.getKeyCode());
 					if(newKey.equals("␣")) { newKey = "Space"; }
 					table.setValueAt(newKey, table.getSelectedRow(), 0);
+					//testing blah blah blah
 				}
 			}
 		});
