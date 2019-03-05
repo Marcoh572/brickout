@@ -581,19 +581,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		//Add Input Map contents to Input List
 		java.util.List<KeyStroke> keys = Arrays.asList(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys());
 		inputList.clear();
-		ArrayList<String> inputs2 = new ArrayList<String>();
+		//ArrayList<String> inputs2 = new ArrayList<String>();
 		//keys.sort(Comparator.comparing(KeyStroke::getKeyCode));
 		keys.forEach( k -> {
 			String keyName = KeyEvent.getKeyText(k.getKeyCode());
 			if(keyName.equals("␣")) { keyName = "Space"; }
 			if(k.isOnKeyRelease() == false ){//don't show released keys
 				inputList.add("" + keyName + "\t-\t" + getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).get(k));
-				inputs2.add("" + k + "\t-\t" + keyName);
+			//	inputs2.add("" + k + "\t-\t" + keyName);
 			}
 		});
 		inputList.sort((s1, s2) -> s1.substring(s1.lastIndexOf("-\t")).compareTo(s2.substring(s2.lastIndexOf("-\t"))));
 		//inputList.forEach( in -> System.out.println(in));
-		inputs2.forEach( in -> System.out.println(in));
+	//	inputs2.forEach( in -> System.out.println(in));
 	}
 	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
@@ -1450,7 +1450,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 	BufferedImage background;
 	Settings thisSetting;
 	Color paddleColor = Color.white;
-	String[][] rowdata;
+	Object[][] rowdata;
 	
 	public Settings(GUI g){
 		gui = g;
@@ -1632,23 +1632,36 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 			tab1.remove(3);
 		
 		//Create Table
-		rowdata = new String[gui.inputList.size()][2];
-		Object[][] rowdataCopy = new Object[gui.inputList.size()][2];
-		for(int i = 0; i < gui.inputList.size(); i++){
-			String[] str = gui.inputList.get(i).split("\\s-\\s");
-			rowdata[i][0] = str[0];
-			rowdata[i][1] = str[1];
-			// rowdataCopy[i][0] = gui.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys()[i];
-			//rowdataCopy[i][1] = str[1];
+		InputMap inputs = gui.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
+		ArrayList<KeyStroke> keys = new ArrayList<KeyStroke>(Arrays.asList(inputs.keys()));
+		keys.sort((k1, k2) -> ((String)inputs.get(k1)).compareTo((String)inputs.get(k2)));
+		keys.removeIf(key -> key.isOnKeyRelease() == true);
+		
+		rowdata = new Object[keys.size()][2];
+		Object[][] rowdataCopy = new Object[keys.size()][2];
+		for(int i = 0; i < keys.size(); i++){
+			KeyStroke key = keys.get(i);
+			rowdata[i][0] = key;
+			rowdata[i][1] = inputs.get(key);
 			rowdataCopy[i] = Arrays.copyOf(rowdata[i], 2);
 		}
-		String colNames[] = {"Key", "Action"};
-		table = new JTable(new DefaultTableModel(rowdataCopy, colNames){
+		Object colNames[] = {"Key", "Action"};
+		table = new JTable(new DefaultTableModel(rowdataCopy, colNames)){
 			@Override
 			public boolean isCellEditable(int row, int col){
 				return false;
 			}
-		});
+			@Override
+			public void setValueAt(Object value, int row, int col) {
+				KeyStroke key = (KeyStroke) value;
+				for(int i = 0, i < this.getRowCount(); i++){
+					if(getValue(row, col).equals(value))
+						return;
+				}
+				
+				getModel().setValueAt(value, row, col);
+			}
+		};
 		table.getModel().addTableModelListener(this);
 		
 		table.setOpaque(false); //set transparency
@@ -1657,7 +1670,22 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 		table.setFont(new Font("Arial", Font.PLAIN, 15));
 		table.setForeground(Color.white); //set text color
 		
-		table.getColumnModel().getColumn(0).setCellRenderer(getRenderer(SwingConstants.CENTER)); //Center Align Keys
+		table.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer(){
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,int row,int col) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
+				KeyStroke key = (KeyStroke)(t.getModel().getValueAt(row, col));
+				String keyName = KeyEvent.getKeyText(key.getKeyCode());
+				if (keyName.equals("␣")) { keyName = "Space"; }
+				
+				setOpaque(false);
+				setText(keyName); //Display the KeyText
+				setHorizontalAlignment(SwingConstants.CENTER); //Center Align the Keys
+				return c;
+			}
+		
+		});
+		
+		//table.getColumnModel().getColumn(0).setCellRenderer(getRenderer(SwingConstants.CENTER)); //Center Align Keys
 		table.getColumnModel().getColumn(1).setCellRenderer(getRenderer(SwingConstants.LEFT)); //Left Align Actions
 		table.getColumnModel().getColumn(0).setMaxWidth(80); //force key column width
  		table.getColumnModel().getColumn(1).setMinWidth(230);//force Action col width
@@ -1754,10 +1782,9 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 				System.out.println("" + KeyEvent.getKeyText(e.getKeyCode()) + " : " + KeyStroke.getKeyStrokeForEvent(e) + 
 									" : " + KeyStroke.getKeyStroke(KeyEvent.getKeyText(e.getKeyCode())));
 				if(table.getSelectedRow() != -1 && e.getKeyCode() >= 32 && e.getKeyCode() <= 90){
-					String newKey = KeyEvent.getKeyText(e.getKeyCode());
-					if(newKey.equals("␣")) { newKey = "Space"; }
-					table.setValueAt(newKey, table.getSelectedRow(), 0);
-					//testing blah blah blah
+					//String newKey = KeyEvent.getKeyText(e.getKeyCode());
+					//if(newKey.equals("␣")) { newKey = "Space"; }
+					table.setValueAt(KeyStroke.getKeyStrokeForEvent(e), table.getSelectedRow(), 0);
 				}
 			}
 		});
@@ -1836,48 +1863,48 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener, Ta
 	
 	@Override
 	public void tableChanged(TableModelEvent e){
-		TableModel source = (TableModel) e.getSource();
-		int row = e.getFirstRow();
-		int col = e.getColumn();	
-		String oldKey = rowdata[row][col];
-		String newKey = ((String)source.getValueAt(row, col));
-		//System.out.println(oldKey + "   " + newKey);
-		
-		if(!newKey.equals(newKey.toUpperCase()) && newKey.length() == 1){
-			source.setValueAt(newKey.toUpperCase(), row, col);
-			return;
-		}
-		
-		if(!oldKey.equals(newKey)){
-			for(int i = 0; i < gui.inputList.size(); i++){ //if the old keys contain new key, change back to old key
-				if( rowdata[i][0].equalsIgnoreCase(newKey)){
-					source.setValueAt(oldKey, row, col);
-					return;
-				}
-			}
-			//next bit happens only if a valid key
-			rowdata[row][col] = newKey;
-			
-			switch(oldKey){
-				case "Space": 	oldKey = "pressed SPACE"; 	break;
-				case "←": 		oldKey = "pressed LEFT"; 	break;
-				case "→": 		oldKey = "pressed RIGHT"; 	break;
-				case "↑": 		oldKey = "pressed UP"; 		break;
-				case "↓": 		oldKey = "pressed DOWN"; 	break;
-			}
-			switch(newKey){
-				case "Space": 	newKey = "pressed SPACE"; 	break;
-				case "←": 		newKey = "pressed LEFT"; 	break;
-				case "→": 		newKey = "pressed RIGHT"; 	break;
-				case "↑": 		newKey = "pressed UP"; 		break;
-				case "↓": 		newKey = "pressed DOWN"; 	break;
-			}
-			
-			
-			System.out.println("oldKey: " + oldKey + "  newKey: " + newKey);
-			//System.out.println("Replacing " + KeyStroke.getKeyStroke(oldKey.charAt(0)) + "  with  " + KeyStroke.getKeyStroke(newKey.charAt(0)));
-			//gui.updateKeyBind(KeyStroke.getKeyStroke(oldKey), KeyStroke.getKeyStroke(newKey));
-		}	
+		// TableModel source = (TableModel) e.getSource();
+// 		int row = e.getFirstRow();
+// 		int col = e.getColumn();	
+// 		String oldKey = rowdata[row][col];
+// 		String newKey = ((String)source.getValueAt(row, col));
+// 		//System.out.println(oldKey + "   " + newKey);
+// 		
+// 		if(!newKey.equals(newKey.toUpperCase()) && newKey.length() == 1){
+// 			source.setValueAt(newKey.toUpperCase(), row, col);
+// 			return;
+// 		}
+// 		
+// 		if(!oldKey.equals(newKey)){
+// 			for(int i = 0; i < gui.inputList.size(); i++){ //if the old keys contain new key, change back to old key
+// 				if( rowdata[i][0].equalsIgnoreCase(newKey)){
+// 					source.setValueAt(oldKey, row, col);
+// 					return;
+// 				}
+// 			}
+// 			//next bit happens only if a valid key
+// 			rowdata[row][col] = newKey;
+// 			
+// 			switch(oldKey){
+// 				case "Space": 	oldKey = "pressed SPACE"; 	break;
+// 				case "←": 		oldKey = "pressed LEFT"; 	break;
+// 				case "→": 		oldKey = "pressed RIGHT"; 	break;
+// 				case "↑": 		oldKey = "pressed UP"; 		break;
+// 				case "↓": 		oldKey = "pressed DOWN"; 	break;
+// 			}
+// 			switch(newKey){
+// 				case "Space": 	newKey = "pressed SPACE"; 	break;
+// 				case "←": 		newKey = "pressed LEFT"; 	break;
+// 				case "→": 		newKey = "pressed RIGHT"; 	break;
+// 				case "↑": 		newKey = "pressed UP"; 		break;
+// 				case "↓": 		newKey = "pressed DOWN"; 	break;
+// 			}
+// 			
+// 			
+// 			System.out.println("oldKey: " + oldKey + "  newKey: " + newKey);
+// 			//System.out.println("Replacing " + KeyStroke.getKeyStroke(oldKey.charAt(0)) + "  with  " + KeyStroke.getKeyStroke(newKey.charAt(0)));
+// 			//gui.updateKeyBind(KeyStroke.getKeyStroke(oldKey), KeyStroke.getKeyStroke(newKey));
+// 		}	
 	}
 }
 
