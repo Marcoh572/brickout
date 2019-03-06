@@ -5,10 +5,11 @@ import java.awt.geom.Rectangle2D;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import javax.swing.*;
-import javax.swing.event.*;
-import javax.swing.border.*;
-import javax.swing.table.*;
-import java.beans.*;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+import javax.swing.border.TitledBorder;
+import javax.swing.plaf.BorderUIResource;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
@@ -22,7 +23,7 @@ public class brickout {
 	public static void main(String[] args){	
 		boolean showSplash = true;
 		JFrame frame = new JFrame("BrickOut - By: Marco");
-		GUI gui = new GUI(ScreenWidth, ScreenHeight, null, null);
+		GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
 		SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
 		
 		frame.addComponentListener(new ComponentAdapter(){
@@ -33,9 +34,9 @@ public class brickout {
 		});
 		frame.add(splash);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setFocusTraversalKeysEnabled(false);
 		frame.pack();
 		frame.setVisible(true);
-
 		
 		while (true){	
 			try{
@@ -50,11 +51,10 @@ public class brickout {
 				}
 				else{ //Game Loop		
 					if(gui.replay){
-						Map<KeyStroke,String> im = getGuiIM(gui);
-						gui.settings.frame.dispose();
 						Object[] savedSettings = gui.getSavedSettings();
+						gui.settings.frame.dispose();
 						frame.remove(gui);
-						gui = new GUI(ScreenWidth, ScreenHeight, im, savedSettings);
+						gui = new GUI(ScreenWidth, ScreenHeight, savedSettings);
 						frame.add(gui, BorderLayout.CENTER);
 						frame.pack();
 					}
@@ -71,16 +71,6 @@ public class brickout {
 			} catch (InterruptedException e) { }
 		}
 	}
-	
-	public static Map<KeyStroke, String> getGuiIM(GUI g){
-		InputMap im1 = g.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
-		Map<KeyStroke, String> im2 = new HashMap<KeyStroke, String>();
-			
-		for(KeyStroke key : im1.keys()) //make a copy of all the inputs with <key, value>
-			im2.put(key, (String)im1.get(key));
-		
-		return im2;
-	}
 }
 	
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
@@ -91,23 +81,23 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	BufferedImage buffer, background, settingsIcon;
 	Graphics2D bg;
 	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
-	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true;
+	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true, hsEligible = !cheatsActive;
+	Settings settings;
 	Rectangle2D bottomBar, intersection;
 	Paddle paddle;
-	Settings settings;
 	ArrayList<Ball> balls = new ArrayList<Ball>();
 	ArrayList<ArrayList<Brick>> bricks = new ArrayList<ArrayList<Brick>>();
 	ArrayList<Brick> exposedBricks = new ArrayList<Brick>();
 	ArrayList<PowerUp> pups = new ArrayList<PowerUp>();
-	ArrayList<String> inputList = new ArrayList<String>();
-	java.util.List<String> cheatsList = Arrays.asList("Paddle Speed ↑ / Ball Angle", "Paddle Speed ↓ / Ball Angle", "Toggle Paddle AutoMove", "Fire Balls", "Tester");
+	java.util.List<String> cheatsList = Arrays.asList("Paddle Speed ↑ / Ball Angle", "Paddle Speed ↓ / Ball Angle", "Toggle Paddle AutoMove", "Spawn Balls", "Spawn PowerUp");
 	Map<KeyStroke, String> savedCheats = new HashMap<KeyStroke, String>();
 	PowerUp activePup;
-	Color colors[] = { new Color(220, 0, 0), new Color(250, 150, 0), new Color(255, 209, 0), new Color(0, 220, 0), new Color(0, 220, 200), new Color(0, 0, 220), new Color(150, 0, 200) };
+	Color colors[] = { new Color(220, 0, 0), new Color(250, 150, 0), new Color(255, 209, 0), 
+					   new Color(0, 220, 0), new Color(0, 220, 200), new Color(0, 0, 220), new Color(150, 0, 200) };
 	Font gameFont = new Font("Courier", Font.PLAIN, 32);
 	Random roll = new Random();
 	
-	public GUI(int sW, int sH, Map<KeyStroke, String> im, Object[] savedSettings){
+	public GUI(int sW, int sH, Object[] savedSettings){
 		addMouseListener(this);
 		addMouseMotionListener(this);
 		screenWidth = sW;
@@ -120,25 +110,20 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		bottomBar = new Rectangle2D.Double(0, screenHeight - 80, screenWidth, 80);
 		paddle = new Paddle();
-		paddleVX = paddle.vx;
+		paddleVX = Math.abs(paddle.vx); //always positive
 		balls.add(new Ball( ballsize/2 ));
-		brickheight = this.populateBricks();
-		try{ 
+		brickheight = this.populateBricks(); //populate bricks and get brickheight
+		try{ //initialize images
 			background = ImageIO.read(GUI.class.getResourceAsStream("images/BG1.jpg"));
 			settingsIcon = ImageIO.read(GUI.class.getResourceAsStream("images/settingsIcon.png"));
 		}
 		catch(IOException e){ System.out.println("File Not Found"); }
-
-		if(savedSettings != null){ setSavedSettings(savedSettings); }
-		if(im != null){
-			for(KeyStroke key : im.keySet()) //populates inputmap with saved input map (including cheats)
-				this.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).put(key, im.get(key));
-			if(!cheatsActive) //remove cheats and save them if cheats are off
-				toggleCheatBindings(cheatsActive);
-			//System.out.println(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).size());
-			initializeKeyBindings(true);
-		}
-		else{ this.initializeKeyBindings(false); }
+		
+		this.initializeKeyBindings();
+		if(savedSettings != null)
+			setSavedSettings(savedSettings); //if on replay, initialize the previous game settings
+		else
+			settings = new Settings(this);
 		setPreferredSize(new Dimension((int)(screenWidth * gameScale), (int)(screenHeight * gameScale)));		
 		addComponentListener(new ComponentAdapter(){
 			@Override
@@ -146,20 +131,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				Rectangle b = e.getComponent().getBounds();
 				bg.scale(1/gameScale, 1/gameScale);
 				gameScale = b.width/(double)screenWidth;
- 				bg.clearRect(0,0,getWidth(), getHeight());
+ 				bg.clearRect(0, 0, getWidth(), getHeight());
 				bg.scale(gameScale, gameScale);
-				//System.out.println(gameScale);
 			}
 		});
 		
-		settings = new Settings(this);
+		
 		fpsTimer = System.currentTimeMillis();
 		startTime = fpsTimer;
 	}
 
 	public void move(){
 		if (!paused && !gameOver){
-			if(System.currentTimeMillis() - startTime >= 10)
+			if(System.currentTimeMillis() - startTime >= 10) //increase gameTimer every 1/100th of a second
 				gameTimer++;
 			
 			timeSinceLastBuff++;
@@ -294,14 +278,15 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setColor(glowingColor(Color.yellow));
 			bg.fill(new Rectangle2D.Double(activePup.pupRect.getX() - margin, activePup.pupRect.getY() - margin, 
 						activePup.pupRect.getWidth() + margin*2, activePup.pupRect.getHeight() + margin*2));	
+			paintActivePup();
 			bg.setColor(Color.white);
 			bg.setFont(new Font("Courier", Font.BOLD, 30));
 			bg.drawString("" + (int)(buffTimer - gameTimer)/100, (float)(activePup.x + activePup.width*.67), (float)(activePup.y + activePup.height*.2));
 			
 			if(mousePos != null && activePup.pupRect.contains(mousePos)){
-				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), activePup.typeToString(), getFontSize(bg));
+				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), activePup.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 				bg.setColor(colors[2]);
-				bg.drawString(activePup.typeToString(), centerX, (float)(screenHeight - getFontSize(bg)/2));	
+				bg.drawString(activePup.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - getFontSize(bg)/2));	
 			}
 		}
 		for(int i = 1; i <= storedPups; i++){
@@ -314,15 +299,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						
 			if(mousePos != null && p.pupRect.contains(mousePos)){
 				bg.setColor(colors[2]);
-				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), p.typeToString(), getFontSize(bg));
+				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), p.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 				
-				bg.drawString(p.typeToString(), centerX, (float)(screenHeight - 5));	
+				bg.drawString(p.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));	
 				
 			}
 		
 		} //action bar number and border
 		pups.forEach( pup -> pup.paint(bg) );
-		bg.setColor(Color.black);
 		bricks.forEach( bList -> bList.forEach( brick -> {
 			if(brick.active){
 				bg.setColor(Color.black);
@@ -330,14 +314,15 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				brick.paint(bg);
 			}
 		}));
-		balls.forEach( ball -> ball.paint(bg) );
+		try{ balls.forEach( ball -> ball.paint(bg) ); }
+		catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
 		
 		if(paused){
 			bg.setColor(Color.red);
 			bg.setFont(gameFont.deriveFont(Font.BOLD, 120));
 			drawCentered("PAUSED", screenHeight/2 - 120);
 			bg.setFont(gameFont);
-			drawCentered("(Press Spacebar)", screenHeight/2 - 60);
+			drawCentered("(Press " + getActionKeyBind("Action") + " or " + getActionKeyBind("Pause") + ")", screenHeight/2 - 60);
 			bg.setFont(new Font("Apple Chancery", Font.ITALIC, 200));
 			bg.drawString("Level " + level, screenWidth/2 - 300, (int)bottomBar.getY() - 200);
 			
@@ -358,7 +343,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setFont(gameFont.deriveFont(Font.BOLD, 120));
 			drawCentered("GAME OVER", screenHeight/2 - 160);
 			bg.setFont(gameFont);
-			drawCentered("(Press R to Replay)", screenHeight/2 - 60);
+			drawCentered("(Press " + getActionKeyBind("Replay") + " to Replay)", screenHeight/2 - 60);
 			bg.setColor(Color.black);
 			bg.fill(bottomBar);
 			bg.setColor(colors[2]); //gold
@@ -368,10 +353,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		}
 		
 		if(showFPS){
-			bg.setFont(gameFont);
+			bg.setFont(gameFont.deriveFont(27f));
 			bg.setColor(Color.white);
 			bg.drawString("FPS:" + fps, 10, (int)bottomBar.getY() - 5);
-			bg.drawString("GT:" + getTime(), 160,(int)bottomBar.getY() - 5);
+			bg.drawString("GT:" + getTime(), 118, (int)bottomBar.getY() - 5);
+			bg.drawString("Speed:" + settings.speedSlider.getValue(), 320, (int)bottomBar.getY() - 5);
 			
 			bg.setFont(gameFont.deriveFont(20f));
 			if(mousePos != null)
@@ -384,7 +370,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		g.drawImage(buffer, null, 0, 0);
 	}
 
-	public void initializeKeyBindings(boolean onReplay){
+	//Game Setup Methods
+	public void initializeKeyBindings(){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
 		
@@ -405,41 +392,39 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			inputs.put(KeyStroke.getKeyStroke("X"), "Cancel PowerUp");
 			inputs.put(KeyStroke.getKeyStroke("R"), "Replay");
 			inputs.put(KeyStroke.getKeyStroke("F"), "Show Details");
-		}
-		if(cheatsActive && savedCheats.size() == 0 && onReplay == false){
+			
+			//cheats
 			inputs.put(KeyStroke.getKeyStroke("UP"), "Paddle Speed ↑ / Ball Angle");
 			inputs.put(KeyStroke.getKeyStroke("DOWN"), "Paddle Speed ↓ / Ball Angle");
 			inputs.put(KeyStroke.getKeyStroke("V"), "Toggle Paddle AutoMove");
-			inputs.put(KeyStroke.getKeyStroke("B"), "Fire Balls");
-			inputs.put(KeyStroke.getKeyStroke("M"), "Tester");
+			inputs.put(KeyStroke.getKeyStroke("B"), "Spawn Balls");
+			inputs.put(KeyStroke.getKeyStroke("M"), "Spawn PowerUp");
 		}
-		
+		if(!cheatsActive) { toggleCheatBindings(false); } //remove cheats and save them if cheats are off
 		
 		actions.clear();
 		//regular actions
 		actions.put("Stop Paddle", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){			
+			public void actionPerformed(ActionEvent e){	
+				paddle.keyPressed = false;
 				if(!paddle.autoMove)
 					paddle.vx = 0;
-				else if (paddle.collidingLeftEdge() || paddle.collidingRightEdge())
+				else if (paddle.collidingLeftEdge())
+					paddle.vx = paddleVX;
+				else if(paddle.collidingRightEdge())
 					paddle.vx = -paddleVX;
 			}
 		});	
 		actions.put("Move Left", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if(paddle.x - paddle.width/2 - 5 < 0)
-					paddle.vx = 0;
-				else
-					paddle.vx = -1 * Math.abs(paddleVX);
-			
+				paddle.keyPressed = true;
+				paddle.vx = -1 * paddleVX;
 			}
 		});
 		actions.put("Move Right", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){	
-				if(paddle.x + paddle.width/2 + 5> screenWidth)
-					paddle.vx = 0;
-				else
-					paddle.vx = Math.abs(paddleVX);
+				paddle.keyPressed = true;
+				paddle.vx = paddleVX;
 			}
 		});
 		actions.put("Pause", new AbstractAction(){
@@ -517,6 +502,22 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public void actionPerformed(ActionEvent e){
 				if(paddle.hasBallStuck){
 					for( Ball ball : balls ){
+						if (ball.ratio > 0.0)
+							ball.ratio -= .1;
+						else
+							ball.ratio = 0.0;
+							
+						ball.hitThePaddle(ball.ratio);
+					}
+				}
+				else if(paddleVX < 10)
+					settings.speedSlider.setValue((int)(paddleVX * 10) + 5);
+			}
+		});
+		actions.put("Paddle Speed ↓ / Ball Angle", new AbstractAction(){
+			public void actionPerformed(ActionEvent e){
+				if(paddle.hasBallStuck){
+					for( Ball ball : balls ){
 						if (ball.ratio < 1.0)
 							ball.ratio += .1;
 						else
@@ -525,90 +526,54 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						ball.hitThePaddle(ball.ratio);
 					}
 				}
-				else if(Math.abs(paddle.vx) < 15)	
-					paddle.vx = Math.signum(paddle.vx) * (Math.abs(paddle.vx) + .5);
-			}
-		});
-		actions.put("Paddle Speed ↓ / Ball Angle", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
-				if(paddle.hasBallStuck){
-					for( Ball ball : balls ){
-						if (ball.ratio > 0.0)
-							ball.ratio -= .1;
-						else
-							ball.ratio = 0.0;
-						
-						ball.hitThePaddle(ball.ratio);
-					}
-				}
-				else if(Math.abs(paddle.vx) > .5)
-					paddle.vx = Math.signum(paddle.vx) * (Math.abs(paddle.vx) - .5);
+				else if(paddleVX > 3.5)
+					settings.speedSlider.setValue((int)(paddleVX * 10) - 5);
 			}
 		});
 		actions.put("Toggle Paddle AutoMove", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){			
-				setAutoMove( !paddle.autoMove );
+				//setAutoMove( !paddle.autoMove );
+				settings.autoMove.doClick();
 			}
 		});	
-		actions.put("Fire Balls", new AbstractAction(){
+		actions.put("Spawn Balls", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				Ball newBall = new Ball(ballsize/2, paddle.x, paddle.y - paddle.height);
-				newBall.vy = -Math.hypot(newBall.vx, newBall.vy);
+				newBall.vy = -Math.hypot(balls.get(0).vx, balls.get(0).vy);
 				newBall.vx = 0;
 				balls.add(newBall);
 			}
 		});
-		actions.put("Tester", new AbstractAction(){
+		actions.put("Spawn PowerUp", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				//loseALife(balls.get(0));
-				changeLevel();
-				//if(activePup == null){
-					//PowerUp p = new PowerUp(screenWidth/2, screenHeight * .667, PowerUp.Type.randomType());
-// 					p.vy = 0;
-					//pups.add(p);
-// 					storedPups++;
-// 					activateBuff(p);
-			// 	}
-// 					else
-// 						changeLevel();
+				//changeLevel();
+				pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
+				timeSinceLastBuff = 0;
+
 			}
 		});		
-		
-		populateInputList();
-		
-	}
-	public void populateInputList(){
-		//Add Input Map contents to Input List
-		java.util.List<KeyStroke> keys = Arrays.asList(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys());
-		inputList.clear();
-		//ArrayList<String> inputs2 = new ArrayList<String>();
-		//keys.sort(Comparator.comparing(KeyStroke::getKeyCode));
-		keys.forEach( k -> {
-			String keyName = KeyEvent.getKeyText(k.getKeyCode());
-			if(keyName.equals("␣")) { keyName = "Space"; }
-			if(k.isOnKeyRelease() == false ){//don't show released keys
-				inputList.add("" + keyName + "\t-\t" + getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).get(k));
-			//	inputs2.add("" + k + "\t-\t" + keyName);
-			}
-		});
-		inputList.sort((s1, s2) -> s1.substring(s1.lastIndexOf("-\t")).compareTo(s2.substring(s2.lastIndexOf("-\t"))));
-		//inputList.forEach( in -> System.out.println(in));
-	//	inputs2.forEach( in -> System.out.println(in));
 	}
 	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
+		KeyStroke oldKeyModded = KeyStroke.getKeyStroke(oldKey.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK);
 		
 		try{
 			if( inputs.get(oldKey) != null ){
 				inputs.put(newKey, inputs.get(oldKey));
-				inputs.remove(oldKey);
-				//populateInputList();
-				//inputList.forEach( in -> System.out.println(in));
+				
+				if(inputs.get(oldKeyModded) != null){
+					inputs.put(oldKey, inputs.get(oldKeyModded));
+					inputs.remove(oldKeyModded);
+					settings.setUpControlList(); //update control list
+				}else
+					inputs.remove(oldKey);
+				
 				return true;
 			}
 		}catch(NullPointerException e) { System.out.println("That key does not exist in the Input Map"); }
 		
-		return false;
+		return false; //let the table know not to update because inputmap didnt change
 	}
 	public void toggleCheatBindings(boolean active){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
@@ -622,14 +587,48 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					inputs.remove(key);
 				}
 			}
-		}else if(savedCheats.size() != 0)//cheats on
-			savedCheats.forEach((k, v) -> inputs.put(k, v));
-		else
-			initializeKeyBindings(false);
-		
-		populateInputList();
+		}else {	//cheats on
+			savedCheats.forEach((k, v) -> {
+				KeyStroke unmoddedKey = KeyStroke.getKeyStroke(k.getKeyCode(), 0); 
+				if(inputs.get(unmoddedKey) == null) //we check if an unmodded key exists, if not we add unmodded key
+					inputs.put(unmoddedKey, v);
+				else //if an unmodded key exists, we add a modded version
+					inputs.put(KeyStroke.getKeyStroke(k.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK), v);
+			});
+		}
 	}
+	public Object[] getSavedSettings(){
+		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
+		Map<KeyStroke, Object> im2 = new HashMap<KeyStroke, Object>();
+		for(KeyStroke key : inputs.keys()) //make a copy of all the inputs in InputMap with <key, value>
+			im2.put(key, inputs.get(key));
 	
+		Object[] savedSettings = { new Color(paddle.paddleColor.getRGB()), Double.valueOf(paddleVX), 
+								   Boolean.valueOf(paddle.autoMove), Boolean.valueOf(cheatsActive), Boolean.valueOf(lockedEnabled), 
+								   Boolean.valueOf(settings.dontAsk), im2 };
+		return savedSettings;
+	}
+	@SuppressWarnings("unchecked")
+	public void setSavedSettings(Object[] savedSettings){
+		paddle.paddleColor = (Color)savedSettings[0];
+		setDifficulty((Double)savedSettings[1] * 10);
+		
+		setAutoMove((Boolean)savedSettings[2]);
+		cheatsActive = (Boolean)savedSettings[3];
+		setLocked((Boolean)savedSettings[4]);
+		
+		if(savedSettings[6] != null){ //set current input map to the saved input map
+			Map<KeyStroke, Object> im = (Map<KeyStroke, Object>) savedSettings[6];
+			this.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).clear(); //clear the current input map
+			
+			for(KeyStroke key : im.keySet()) //populates inputmap with saved input map (including cheats)
+				this.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).put(key, im.get(key));
+			if(!cheatsActive) { toggleCheatBindings(false); } //remove cheats and save them if cheats are off
+		}
+		
+		settings = new Settings(this);
+		settings.dontAsk = (Boolean)savedSettings[5];
+	}
 	
 	//utility methods
 	public String getTime(){
@@ -655,7 +654,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			centerX = getCenterForMaxFont(height, str, fontsize + 1);
 		}
 		
-		//System.out.println(getFontSize(bg));
 		return centerX;
 		
 	}
@@ -665,43 +663,52 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		return Integer.parseInt(mets.substring(5));
 	}
-	public void setDifficulty(double newSpeed){
-		if(paddle.autoMove)
-			paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
+	public Color glowingColor(Color c){
+		int glowSpeed = 5;
+		int max = 256 * 2 / glowSpeed;
+		int alpha = (int)gameTimer % max; //0-255 when gameScale = 2
 		
-		paddleVX = Math.signum(paddleVX) * newSpeed / 10.0;	
+		if(alpha > max/2) //at halfway, reverse direction
+			alpha = max - alpha;
+	
+		return new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha * glowSpeed);
+	}
+	public void paintActivePup(){ //paint active pup. glow if less than 5 seconds left
+		if((buffTimer - gameTimer)/100 < 5 ){ bg.setColor(glowingColor(activePup.powerColor)); }
+		else{ bg.setColor(activePup.powerColor); }
+		bg.fill(activePup.pupRect);
 		
-		for(Ball ball: balls){
-			double theta = Math.toDegrees(Math.atan2(-ball.vy, ball.vx));
-			double dist = Math.hypot(  3 * newSpeed/50, 3 * newSpeed/50  );
-			ball.vx = dist * Math.cos(Math.toRadians(theta));
-			ball.vy = -dist * Math.sin(Math.toRadians(theta));
-			//System.out.println("newSpeed: " + newSpeed + "  vx: " + ball.vx + "  vy: " + ball.vy);
+		if((buffTimer - gameTimer)/100 < 5 ){ bg.setColor(glowingColor(Color.black)); }
+		else{ bg.setColor(Color.black);}
+		bg.setFont(new Font("Courier", Font.BOLD, 30));
+		bg.drawString(activePup.initials, (int)(activePup.x - activePup.width/2 + 2), (int)(activePup.y + activePup.height*.2));
+	}
+	public String getActionKeyBind(String action){
+		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
+		KeyStroke key = KeyStroke.getKeyStroke('a');
+		for(KeyStroke k : inputs.keys()){
+			if(inputs.get(k).equals(action)){
+				key = k;
+				break;
+			}	
+		}
+		String keyName = KeyEvent.getKeyText(key.getKeyCode()); //Get the KeyText of our KeyStroke
+		if (keyName.equals("␣")) { keyName = "Spacebar"; }
+		if (keyName.equals("⇥")) { keyName = "Tab"; }
+		if (keyName.equals("⇪")) { keyName = "CAPS"; }
+		
+		return keyName;
+	}
+	public KeyStroke getKeyBind(String action){
+		for(KeyStroke k : getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys()){
+			if(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).get(k).equals(action)){
+				return k;
+			}	
 		}
 		
-
+		System.out.println("Action not found. Returning null.");
+		return null;
 	}
-	public Color glowingColor(Color c){
-		int alpha = (int)gameTimer % 255;
-		
-		if(alpha > 127)
-			alpha = 255-alpha;
-	
-		return new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha * 2);
-	}
-	public Object[] getSavedSettings(){
-		Object[] savedSettings = { new Color(paddle.paddleColor.getRGB()), Double.valueOf(paddleVX), 
-								   Boolean.valueOf(paddle.autoMove), Boolean.valueOf(cheatsActive), Boolean.valueOf(lockedEnabled) };
-		return savedSettings;
-	}
-	public void setSavedSettings(Object[] savedSettings){
-		paddle.paddleColor = (Color)savedSettings[0];
-		paddleVX = (Double)savedSettings[1];
-		setAutoMove((Boolean)savedSettings[2]);
-		cheatsActive = (Boolean)savedSettings[3];
-		setLocked((Boolean)savedSettings[4]);
-	}
-	
 	
 	//game methods
 	public double populateBricks(){ //populate bricks array and return brick height
@@ -749,10 +756,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					deactivateBuff();
 				paddle = new Paddle(paddle.autoMove, paddle.paddleColor);
 				setDifficulty((double)settings.speedSlider.getValue());
+				//paddle.vx = -1 * Math.abs(paddle.vx);
 			}
 			else{
 				gameOver = true;
-				if(!cheatsActive) { //if false make inputmap include cheats then set back to false 
+				if(!cheatsActive) { //if false make inputmap include cheats for new game then set back to false 
 					toggleCheatBindings(true); 
 					cheatsActive = false;
 				}
@@ -883,7 +891,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			case BIG_BALL:
 				balls.forEach(ball -> {
 					ball.rad = ballsize;
-					if(ball.y < screenHeight){ ball.y += ballsize; }
+					if(ball.y < screenHeight/2){ ball.y += ballsize; }
 					ball.resetFrame();
 				});
 			break;
@@ -939,8 +947,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					}
 				});
 			break;
-				
-		
 		}
 	
 	
@@ -949,12 +955,28 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		buffTimer = 0;
 	}
 	
-	
+	//settings toggle methods
+	public void setDifficulty(double newSpeed){
+		if(paddle.autoMove)
+			paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
+		
+		paddleVX = newSpeed / 10.0;	
+		
+		try{
+			for(Ball ball: balls){
+				double theta = Math.toDegrees(Math.atan2(-ball.vy, ball.vx));
+				double dist = Math.hypot(  3 * newSpeed/50, 3 * newSpeed/50  );
+				ball.vx = dist * Math.cos(Math.toRadians(theta));
+				ball.vy = -dist * Math.sin(Math.toRadians(theta));
+			}
+		}catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
+
+	}
 	public boolean getAutoMove(){ return paddle.autoMove; }
 	public void setAutoMove(boolean b){ 
 		paddle.autoMove = b; 
 		if(b)
-			paddle.vx = paddleVX;
+			paddle.vx = -paddleVX;
 		else
 			paddle.vx = 0;
 		
@@ -970,7 +992,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				}
 			}));
 		}
-		else if(numLocked == 0){ //put in some random locked bricks 
+		else if(numLocked == 0){ //put in some random locked bricks if none were locked previously
 			bricks.forEach( bList -> bList.forEach( brick -> {
 				int rollLocked = roll.nextInt(50 - brick.type*3);
 				if(brick.active && rollLocked == 0){
@@ -984,7 +1006,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			int c = numLocked;
 			while (c > 0){
 				for( ArrayList<Brick> bList : bricks ){
-					if(c > 0){
+					if(c > 0){ //don't move to the next row if we reached numlocked
 						for(Brick brick : bList){
 							int rollLocked = roll.nextInt(50 - brick.type*3);
 							if(rollLocked == 0 && c > 0 && brick.locked == false && brick.active){
@@ -1007,40 +1029,25 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseClicked(MouseEvent e) {}	
 	public void mousePressed(MouseEvent e) {}
 	public void mouseReleased(MouseEvent e) {
-		/*Ball b = balls.get(0);
-		double mX = e.getX() * 1/gameScale, mY = e.getY() * 1/gameScale;
-		double theta = Math.atan2(mY - b.y, mX - b.x);
-		System.out.println(Math.toDegrees(theta));
- 		double r = Math.hypot(b.vx, b.vy);
- 		b.vx = r * Math.cos(theta);
- 		b.vy = r * Math.sin(theta);
-
-
-		balls.set(0, b);*/
-	
 		if(!paused && storedPups > 0){
 			for(int i = 1; i <= storedPups; i++){
 				PowerUp p = getStoredPup(i);
 				
+				//find which PowerUp was clicked
 				if(p != null && p.pupRect.contains(e.getX() * 1/gameScale, e.getY() * 1/gameScale)){
 					switch (i){
-						case 1:
+						case 1: //clicked on PowerUp 1
 							if(storedPups == 3)
 								getStoredPup(3).setRect(getStoredPup(2));
 							if(storedPups >= 2)
 								getStoredPup(2).setRect(getStoredPup(1));
 						break;
-						case 2:
+						case 2: //clicked on PowerUp 2
 							if(storedPups == 3)
 								getStoredPup(3).setRect(getStoredPup(2));
 						break;
-
-						
-						
-					}		
-					
+					}
 					activateBuff(p);
-					
 					break;	
 				}
 			}
@@ -1053,14 +1060,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseExited(MouseEvent e) {
 		mousePos = null;
 	}
-	public void mouseDragged(MouseEvent e){
-		// balls.get(0).x = e.getX() * 1/gameScale;
-// 		balls.get(0).y = e.getY() * 1/gameScale;
-	}
+	public void mouseDragged(MouseEvent e){}
 	public void mouseMoved(MouseEvent e){
 		mousePos = e.getPoint();
 		mousePos.setLocation(e.getX() * 1/gameScale, e.getY() * 1/gameScale);
-		
 	}
 }
 
@@ -1070,8 +1073,8 @@ class Paddle{
 	double width = 150, height = 30; 
 	double speed = 130/(double)brickout.FPS;
 	int screenW, screenH;
-	Color paddleColor = Color.blue;
-	boolean autoMove = true, sticky = false, hasBallStuck = false;
+	Color paddleColor = Color.getHSBColor(.69f, 1.0f, 1.0f);
+	boolean autoMove = true, sticky = false, hasBallStuck = false, keyPressed = false;
 	
 	public Paddle(){
 		this(brickout.ScreenWidth, brickout.ScreenHeight);
@@ -1095,7 +1098,7 @@ class Paddle{
 	
 	public void move(){
 		if ( (collidingLeftEdge() && vx < 0) || (collidingRightEdge() && vx > 0) ){
-			if(autoMove)
+			if(!keyPressed)
 				vx = -vx;
 			else
 				vx = 0;
@@ -1110,18 +1113,18 @@ class Paddle{
 	}
 	
 	public boolean collidingRightEdge(){
-		return (x + (width/2)) > screenW;
+		return (x + (width/2)) >= screenW;
 	}
 	public boolean collidingLeftEdge(){
-		return (x - (width/2)) < 0;
+		return (x - (width/2)) <= 0;
 	}
 
 	public void paint(Graphics2D g){
 		g.setColor(paddleColor);
 		g.fill(thisPaddle);
-		g.setFont(new Font("American Typewriter", Font.BOLD, 15));
-		g.setColor(Color.white);
-		g.drawString(""+vx, (float)x - 15, (float)y);
+		// g.setFont(new Font("American Typewriter", Font.BOLD, 15));
+// 		g.setColor(Color.white);
+// 		g.drawString("" + vx, (float)x - 15, (float)y);
 
 	}
 }
@@ -1377,7 +1380,7 @@ class PowerUp extends Paddle{
 				break;
 		}
 	}
-	public String typeToString(){
+	public String typeToString(String action){
 		switch(type){
 			case BIG_BALL:
 				return "Big Ball: Activate to double the Ball's size for 15s";
@@ -1388,7 +1391,7 @@ class PowerUp extends Paddle{
 			case EXTRA_LIFE:
 				return "Extra Life: Activate to give yourself an extra life";
 			case STICKY_PADDLE:
-				return "Sticky Paddle: Activate to catch and release balls for 15s";
+				return "Sticky Paddle: Release stuck balls with " + action + " for 15s";
 			case POWER_BALL:
 				return "Power Ball: Activate to launch a Power Ball that destroys everything in it's path";
 			default:
@@ -1417,7 +1420,6 @@ class PowerUp extends Paddle{
 		active = true;
 		stored = false;
 		setRect(screenW/2 - width/2, screenH - 80 - height/3);
-		//System.out.println(toString());
 	}
 	
 	public String toString(){
@@ -1426,11 +1428,13 @@ class PowerUp extends Paddle{
 	
 	@Override
 	public void paint(Graphics2D g){
-		g.setColor(powerColor);
-		g.fill(pupRect);
-		g.setColor(Color.black);
-		g.setFont(new Font("Courier", Font.BOLD, 30));
-		g.drawString(initials, (int)(x - width/2 + 2), (int)(y + height*.2));
+		if(!active){ //we will draw active pups separately
+			g.setColor(powerColor);
+			g.fill(pupRect);
+			g.setColor(Color.black);
+			g.setFont(new Font("Courier", Font.BOLD, 30));
+			g.drawString(initials, (int)(x - width/2 + 2), (int)(y + height*.2));
+		}
 	}
 
 }
@@ -1449,7 +1453,9 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	Rectangle colorTrack, speedTrack;
 	BufferedImage background;
 	Settings thisSetting;
-	Color paddleColor = Color.white;
+	Color paddleColor;
+	boolean wrongInput = false, dontAsk = false;
+	
 	
 	public Settings(GUI g){
 		gui = g;
@@ -1482,14 +1488,14 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		
 		frame.setContentPane(this);
 		frame.pack();
+		frame.setFocusTraversalKeysEnabled(false);
 		frame.setResizable(false);
-		
 		// frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 // 		frame.setVisible(true);
 	}
 	
 	public void setUpColorSettings(){
-		Color paddleColor = gui.paddle.paddleColor;
+		paddleColor = gui.paddle.paddleColor;
 		float hsbvals[] = Color.RGBtoHSB(paddleColor.getRed(), paddleColor.getGreen(), paddleColor.getBlue(), null);
 		colorSlider = new JSlider(0, 1000, (int)(hsbvals[0] * 1000)); //hues 0 to 1000 with initial hue being paddleColor
 		colorSlider.setPreferredSize(new Dimension((int)(tab1.getPreferredSize().width * .8), colorSlider.getPreferredSize().height));
@@ -1529,7 +1535,6 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	}
 	public void setUpSpeedSettings(){
 		speedSlider = new JSlider(35, 100, (int)(Math.abs(gui.paddleVX) * 10));
-		//speedSlider.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, speedSlider.getPreferredSize().height * 2));
 		speedSlider.addChangeListener(this);
 		speedSlider.setOpaque(false);			
 		speedSlider.setMajorTickSpacing(5);
@@ -1627,66 +1632,130 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		tab1.add(group);
 	}	
 	public void setUpControlList(){
-		if(table != null)
+		if(table != null) //update for the cheat toggle
 			tab1.remove(3);
 		
 		//Create Table
 		InputMap inputs = gui.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
-		ArrayList<KeyStroke> keys = new ArrayList<KeyStroke>(Arrays.asList(inputs.keys()));
-		keys.sort((k1, k2) -> ((String)inputs.get(k1)).compareTo((String)inputs.get(k2)));
-		keys.removeIf(key -> key.isOnKeyRelease() == true);
+		ArrayList<KeyStroke> keys = new ArrayList<KeyStroke>(Arrays.asList(inputs.keys())); //get list of keys in GUI's inputmap
+		keys.sort((k1, k2) -> ((String)inputs.get(k1)).compareTo((String)inputs.get(k2))); //sort keystrokes by their actions
+		keys.removeIf(key -> key.isOnKeyRelease() == true); //remove "released" keystrokes
 		
 		Object[][] rowdata = new Object[keys.size()][2];
 		for(int i = 0; i < keys.size(); i++){
 			KeyStroke key = keys.get(i);
 			rowdata[i][0] = key;
 			rowdata[i][1] = inputs.get(key);
-		}
+		} //populate the table with keys and their actions
 		Object colNames[] = {"Key", "Action"};
 		table = new JTable(rowdata, colNames){
 			@Override
-			public boolean isCellEditable(int row, int col){
+			public boolean isCellEditable(int row, int col){ //no cells are editable
 				return false;
 			}
 			@Override
 			public void setValueAt(Object value, int row, int col) {
 				KeyStroke newKey = (KeyStroke) value;
 				KeyStroke oldKey = (KeyStroke) getValueAt(row, col);
-				//System.out.println("oldKey: " + oldKey + "  newKey: " + newKey);
-				for(int i = 0; i < this.getRowCount(); i++){
-					if(getValueAt(i, col).equals(value))
+				for(int i = 0; i < this.getRowCount(); i++){ //don't change value if it exists already
+					if(getValueAt(i, col).equals(value)){
+						wrongInput = true;
+						updateUI();
 						return;
+					}
 				}
+				wrongInput = false; //change border color to default when making a correct choice
+				updateUI();
 				
-				getModel().setValueAt(value, row, col);
-				gui.updateKeyBind(oldKey, newKey);
+				if(gui.updateKeyBind(oldKey, newKey)) //update keybind. Only if successful, change table
+					getModel().setValueAt(value, row, col);
+				
 			}
 		};
-		
 		table.setOpaque(false); //set transparency
 		table.setShowGrid(false);
 		table.setRowHeight( table.getRowHeight() + 1 );
 		table.setFont(new Font("Arial", Font.PLAIN, 15));
 		table.setForeground(Color.white); //set text color
+		table.setSelectionForeground(Color.white);
 		
 		table.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer(){
 			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,int row,int col) {
 				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
+				
 				KeyStroke key = (KeyStroke)(t.getModel().getValueAt(row, col));
-				String keyName = KeyEvent.getKeyText(key.getKeyCode());
+				String keyName = KeyEvent.getKeyText(key.getKeyCode()); //change our cells to display KeyText
 				if (keyName.equals("␣")) { keyName = "Space"; }
 				if (keyName.equals("⇥")) { keyName = "Tab"; }
 				if (keyName.equals("⇪")) { keyName = "CAPS"; }
+				
+				if(key.getModifiers() == 195){
+					setForeground(Color.red);
+					setToolTipText("Inactive Key Binding. Update required.");
+				}
+				else
+					setForeground(Color.white);
+				
+				if(isSelected && (getBorder() instanceof javax.swing.border.EmptyBorder) == false && wrongInput){
+					setBorder(new BorderUIResource.LineBorderUIResource(Color.red)); //set Border to red if they try to input existing keybind
+					setToolTipText("That Key Binding already exists!");
+				}else if(getForeground().equals(Color.white))
+					setToolTipText("Select this cell and press a key to update this Key Binding");	
 				
 				setOpaque(false);
 				setText(keyName); //Display the KeyText
 				setHorizontalAlignment(SwingConstants.CENTER); //Center Align the Keys
 				return c;
 			}
-		
 		});
-		
-		table.getColumnModel().getColumn(1).setCellRenderer(getRenderer(SwingConstants.LEFT)); //Left Align Actions
+		table.getColumnModel().getColumn(1).setCellRenderer(new DefaultTableCellRenderer(){
+			public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus,int row,int col) {
+				Component c = super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
+				
+				KeyStroke key = (KeyStroke)(t.getModel().getValueAt(row, 0));
+				String action = (String)(t.getModel().getValueAt(row, 1));
+				
+				switch(action){
+					case "Action":
+						setToolTipText("Actions include: Unpausing the game and launching balls from Sticky Paddles");
+						break;
+					case "Paddle Speed ↑ / Ball Angle":
+						setToolTipText("Increase Paddle Speed / Adjust Launch Angle for stuck balls");
+						break;
+					case "Paddle Speed ↓ / Ball Angle":
+						setToolTipText("Decrease Paddle Speed / Adjust Launch Angle for stuck balls");
+						break;
+					case "Spawn Balls":
+						setToolTipText("Launch a new ball from the center of the paddle - *CAN CAUSE ERRORS*");
+						break;
+					case "Spawn PowerUp":
+						setToolTipText("Spawn a Random PowerUp in the Center of the Screen");
+						break;
+					case "Show Details":
+						setToolTipText("Display Frames per Second, Game Timer, and Mouse Position");
+						break;
+					default:
+						setToolTipText(action);
+						break;
+				}
+				
+				if(key.getModifiers() == 195){
+					setForeground(Color.red);
+					setToolTipText("Inactive Key Binding. Update required.");
+				}
+				else
+					setForeground(Color.white);
+				
+				if(table.isCellSelected(row, 0) && wrongInput){
+					setBorder(new BorderUIResource.LineBorderUIResource(Color.red)); //set Border to red if they try to input existing keybind
+					setToolTipText("That Key Binding already exists!");
+				}
+				
+				setOpaque(false);
+				setHorizontalAlignment(SwingConstants.LEFT); //Left Align the Actions
+				return c;
+			}
+		});
 		table.getColumnModel().getColumn(0).setMaxWidth(80); //force key column width
  		table.getColumnModel().getColumn(1).setMinWidth(230);//force Action col width
 		
@@ -1702,6 +1771,8 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 				if(isSelectable(index0, index1)) {
 					super.setSelectionInterval(index0, index1);
 				}
+				wrongInput = false; //change border color to default when clicking elsewhere
+				updateUI();
 			}
 
 			@Override
@@ -1724,10 +1795,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		
 		JPanel group = new JPanel();
 		group.setOpaque(false);
-		// group.setLayout(new BoxLayout(group, BoxLayout.PAGE_AXIS));
- 		//group.setPreferredSize(new Dimension(thisSetting.getPreferredSize().width, tab1.getHeight() - group.getY()));
-		//group.setAlignmentX(Component.CENTER_ALIGNMENT);
-		TitledBorder bdr = BorderFactory.createTitledBorder("Control List");
+		TitledBorder bdr = BorderFactory.createTitledBorder("Control List - Hover For More Info");
 		bdr.setTitleColor(Color.white);
 		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
 		group.add(table.getTableHeader());
@@ -1743,59 +1811,35 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
   		speedTrack.setRect(speedTrack.getX() * 2.5, speedTrack.getY() + speedTrack.getHeight()/2 - 3, speedTrack.getWidth() * .84, 2);
 	}
 	public void handleTableIO(){
-		/*InputMap im = table.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
-		ActionMap am = table.getActionMap();
-		TableModel model = table.getModel();
-
-		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, true), "left");
-		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0), "right");
-		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "up");
-		im.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "down");
-		
-		am.put("left", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
-				//if(table.getSelectedRow() != -1 )
-					model.setValueAt("←", table.getSelectedRow(), 0);
-			}
-		});
-		am.put("right", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
-				if(table.getSelectedRow() != -1 )
-					model.setValueAt("→", table.getSelectedRow(), 0);
-			}
-		});
-		am.put("up", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
-				if(table.getSelectedRow() != -1 )
-					model.setValueAt("↑", table.getSelectedRow(), 0);
-			}
-		});
-		am.put("down", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
-				if(table.getSelectedRow() != -1 )
-					model.setValueAt("↓", table.getSelectedRow(), 0);
-			}
-		});
-		*/
 		table.addKeyListener(new KeyAdapter(){
 			public void keyPressed(KeyEvent e){
-				// System.out.println("" + KeyEvent.getKeyText(e.getKeyCode()) + " : " + KeyStroke.getKeyStrokeForEvent(e) + 
-// 									" : " + KeyStroke.getKeyStroke(KeyEvent.getKeyText(e.getKeyCode())));
-				//if(table.getSelectedRow() != -1 && e.getKeyCode() >= 32 && e.getKeyCode() <= 90){
-				if(table.getSelectedRow() != -1){
-					//String newKey = KeyEvent.getKeyText(e.getKeyCode());
-					//if(newKey.equals("␣")) { newKey = "Space"; }
+				if(table.getSelectedRow() != -1)
 					table.setValueAt(KeyStroke.getKeyStrokeForEvent(e), table.getSelectedRow(), 0);
-				}
 			}
 		});
 		
 	}
-	public DefaultTableCellRenderer getRenderer(int alignment){
-		DefaultTableCellRenderer render = new DefaultTableCellRenderer();
- 		render.setHorizontalAlignment(alignment);
- 		render.setOpaque(false);
-		return render;
+	public int confirmCheatToggle(){
+		JLabel msg = new JLabel("Are you sure you want to Enable Cheats?");
+		JLabel msg2 = new JLabel("Enabling Cheats disqualifies you from the High Scores");
+		JLabel msg3 = new JLabel("(Enabling Cheats can potentially cause Brickout to crash)");
+		JCheckBox dma = new JCheckBox("Do not ask me again");
+		msg3.setFont(msg3.getFont().deriveFont(Font.ITALIC));
+		JPanel msgPanel = new JPanel();
+		msgPanel.setLayout(new BoxLayout(msgPanel, BoxLayout.PAGE_AXIS));
+		msgPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+		msgPanel.add(msg);
+		msgPanel.add(msg2);
+		msgPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+		msgPanel.add(msg3);
+		msgPanel.add(Box.createRigidArea(new Dimension(0, 25)));
+		msgPanel.add(dma);
+		int confirm = JOptionPane.showConfirmDialog(this, 
+				msgPanel, "Cheats Confirmation", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if(dma.isSelected())
+			dontAsk = true;
+		
+		return confirm;
 	}
 	
 	public void paintComponent(Graphics gg){
@@ -1817,18 +1861,16 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 	public void stateChanged(ChangeEvent e){
 		JSlider source = (JSlider) e.getSource();
 		
-		if(colorSlider.getValueIsAdjusting()){		
+		if(source.equals(colorSlider)){ //change colorSlider		
 			float value = source.getValue() / 1000.0f; //gets percentage
 			colorLabel.setText("" + source.getValue() /10);
 			paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
 			gui.paddle.paddleColor = paddleColor;
 			repaint();
-			colorSlider.setValueIsAdjusting(false);
 		}
-		else if(speedSlider.getValueIsAdjusting()){
+		else if(source.equals(speedSlider)){ //change speedSlider
 			double value = (double)source.getValue();
 			gui.setDifficulty(value);
-			speedSlider.setValueIsAdjusting(false);
 		}
 	}
 	
@@ -1843,9 +1885,17 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 				autoMove.setForeground(Color.black);
 		}
 		else if("cheat".equals(e.getActionCommand())){
-			cheats.setSelected(!cheats.isSelected());
-			gui.toggleCheatBindings(!gui.cheatsActive);
-			setUpControlList();
+			int cheatConfirmation = 0;
+			if(cheats.isSelected() == false && dontAsk == false)
+				cheatConfirmation = confirmCheatToggle();
+			
+			if(cheatConfirmation == 0){
+				cheats.setSelected(!cheats.isSelected());
+				gui.toggleCheatBindings(!gui.cheatsActive);
+				setUpControlList();
+				if(cheats.isSelected()) { gui.hsEligible = false; } //ineligible for high scores if cheats active
+			}
+				
 			if(cheats.isSelected())
 				cheats.setForeground(Color.white);
 			else
@@ -1890,7 +1940,6 @@ class SplashScreen extends JPanel implements MouseListener{
 				gameScale = b.width/(double)screenWidth;
  				bg.clearRect(0,0,getWidth(), getHeight());
 				bg.scale(gameScale, gameScale);
-				//System.out.println(gameScale);
 			}
 		});
 	}
@@ -1935,7 +1984,6 @@ class SplashScreen extends JPanel implements MouseListener{
 			centerX = getCenterForMaxFont(height, str, fontsize + 1);
 		}
 		
-		//System.out.println(screenWidth - metrics.stringWidth(str));
 		return centerX;
 	}
 	public int getFontSize(Graphics2D b){
