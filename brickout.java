@@ -9,9 +9,9 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.border.TitledBorder;
 import javax.swing.plaf.BorderUIResource;
-import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.*;
 import javax.imageio.ImageIO;
-import java.io.File;
+import java.io.InputStream;
 import java.io.IOException;
 import java.util.*;
 
@@ -76,12 +76,12 @@ public class brickout {
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	static int screenWidth, screenHeight; 
 	int rows = 2, cols = 7, margin = 4, frames = 0, fps = 0, bgIndex = 1;
-	int level = 1, score = 0, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
+	int level = 1, score = 0, lives = 0, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
 	Point mousePos = null;
 	BufferedImage buffer, background, settingsIcon;
 	Graphics2D bg;
 	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
-	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true, hsEligible = !cheatsActive;
+	boolean paused = false, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true, hsEligible = !cheatsActive;
 	Settings settings;
 	Rectangle2D bottomBar, intersection;
 	Paddle paddle;
@@ -136,7 +136,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			}
 		});
 		
-		
+		loseALife(balls.get(0));
 		fpsTimer = System.currentTimeMillis();
 		startTime = fpsTimer;
 	}
@@ -341,15 +341,16 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setColor(Color.red);
 			bg.drawImage(background, 0, 0, screenWidth, screenHeight, this);
 			bg.setFont(gameFont.deriveFont(Font.BOLD, 120));
-			drawCentered("GAME OVER", screenHeight/2 - 160);
+			drawCentered("GAME OVER", (int)(screenHeight * .25) );
 			bg.setFont(gameFont);
-			drawCentered("(Press " + getActionKeyBind("Replay") + " to Replay)", screenHeight/2 - 60);
+			drawCentered("(Press " + getActionKeyBind("Replay") + " to Replay)", (int)(screenHeight * .3) );
 			bg.setColor(Color.black);
 			bg.fill(bottomBar);
 			bg.setColor(colors[2]); //gold
 			bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
 			bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
 			bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
+			
 		}
 		
 		if(showFPS){
@@ -629,6 +630,121 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		settings = new Settings(this);
 		settings.dontAsk = (Boolean)savedSettings[5];
 	}
+	public void createAndDisplayHighScores(){
+		InputStream highscores;
+		try{ highscores = GUI.class.getResourceAsStream("highscores.csv"); }
+		catch(NullPointerException e) { System.out.println("highscores.csv Not Found"); return; }
+		Scanner reader = (new Scanner(highscores)).useDelimiter(",");
+		
+		String headerData[] = new String[6]; //Read Header Data
+		if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); }
+		
+		Object[][] hsData = new Object[7][headerData.length]; //Read High Score Data
+		int row = 0;
+		while(reader.hasNextLine()){
+			String linedata[] = reader.nextLine().split(",");
+			for( int col = 0; col < linedata.length; col++){
+				switch(col){
+					case 0: hsData[row][col] = linedata[col]; break; //Name
+					case 1: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]);	break; //Score
+					case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]);	break; //Level
+					case 3: hsData[row][col] = linedata[col]; break; //Time
+					case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
+					case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
+				}
+			}
+			row++;
+		}
+		
+		JTable hsTable = setUpTable(hsData, headerData);
+		JPanel tablePanel = new JPanel(){
+			@Override
+			public boolean isOpaque(){
+				//setPreferredSize(hsTable.getPreferredSize());
+				add(hsTable.getTableHeader());
+				add(hsTable);
+				return false;
+			}
+		};
+		
+		setLayout(new BoxLayout(this, BoxLayout.PAGE_AXIS));
+		add(Box.createRigidArea(new Dimension(1, (int)(screenHeight * gameScale * .55))));
+		add(tablePanel);
+		add(Box.createVerticalGlue());
+		updateUI();
+	}
+	public JTable setUpTable(Object[][] hsData, String[] headerData){
+		JTable table = new JTable(hsData, headerData){
+			@Override
+			public boolean isCellEditable(int row, int col){ //no cells are editable
+				return false;
+			}
+			@Override
+			public boolean isCellSelected(int row, int col){
+				return false;
+			}
+			// 
+// 			@Override
+// 			public Dimension getPreferredSize(){
+// 				return new Dimension((int)(screenWidth * gameScale * .5), this.getHeight());
+// 			}
+		};
+		
+		table.setOpaque(false); //set transparency
+		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+		table.setShowGrid(false);
+		//table.setShowHorizontalLines(false);
+		table.setCellSelectionEnabled(false);
+		//table.setRowHeight( table.getRowHeight() + 1 );
+		table.setFont(gameFont.deriveFont(20f));
+		table.setForeground(colors[2]); //set text color to gold
+		table.setSelectionForeground(colors[2]);
+		//((DefaultTableCellRenderer)table.getDefaultRenderer(Object.class)).setOpaque(false);
+		((DefaultTableCellRenderer)table.getDefaultRenderer(Object.class)).setBackground(new Color(0f, 0f, 0f, 0.5f));
+		
+		JTableHeader header = table.getTableHeader();
+		header.setResizingAllowed(false);
+		header.setReorderingAllowed(false);
+		((DefaultTableCellRenderer)header.getDefaultRenderer()).setHorizontalAlignment(SwingConstants.CENTER);
+		header.setOpaque(false); //set transparency
+		header.setBackground(new Color(1.0f, 1.0f, 1.0f, 0.1f));
+		header.setFont(gameFont.deriveFont(32f * (float)gameScale));
+		header.setForeground(colors[2]); //set text color to Gold
+		
+		TableColumnModel model = table.getColumnModel();
+		for(int col = 0; col < table.getColumnCount(); col++){ //resize columns
+			int width = 15; // Min width
+			for (int row = 0; row < table.getRowCount(); row++) { //get largest width among the rows
+				FontMetrics tableFM = table.getFontMetrics(table.getFont());
+				Object val = table.getValueAt(row, col);
+				int colWidth = tableFM.stringWidth( val instanceof String == false ? val.toString() : (String)val );
+				
+				width = Math.max(colWidth , width);
+			}
+			
+			//see if the header width is larger
+			FontMetrics headerFontMetrics = header.getFontMetrics(header.getFont());
+			int headerWidth = headerFontMetrics.stringWidth(table.getColumnName(col));
+ 			width = Math.max(headerWidth + 1 , width);
+		
+			model.getColumn(col).setPreferredWidth(width + 10);
+			if( col > 4 ) {
+				model.getColumn(col).setCellRenderer(new DefaultTableCellRenderer(){
+					public boolean isOpaque(){
+						setHorizontalAlignment(SwingConstants.CENTER);	
+						return false;
+					}
+				)}; 
+			}
+			//System.out.println("width for column " + col + ": " + width + "  |  totalColWidth: " + totalColWidth);
+		}
+		
+		model.setColumnMargin(5);
+		//sstable.setIntercellSpacing(new Dimension(5, 0));
+		System.out.println(header.getColumnModel().getColumnMargin());
+		
+		return table;
+	}
 	
 	//utility methods
 	public String getTime(){
@@ -764,6 +880,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					toggleCheatBindings(true); 
 					cheatsActive = false;
 				}
+				createAndDisplayHighScores();
 			}
 		}
 	}
@@ -836,11 +953,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		catch(IOException e){ System.out.println("File Not Found"); }
 	}
 	public void setBackground (int i){
-		int index;
-		if( i > 6 )
-			index = 1;
-		else
-			index = i;
+		int index = (i > 6) ? 1 : i ;
+		// if( i > 6 )
+// 			index = 1;
+// 		else
+// 			index = i;
 		try{ 
 			background = ImageIO.read(GUI.class.getResourceAsStream("images/BG" + index + ".jpg")); 
 		}
@@ -975,11 +1092,12 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public boolean getAutoMove(){ return paddle.autoMove; }
 	public void setAutoMove(boolean b){ 
 		paddle.autoMove = b; 
-		if(b)
-			paddle.vx = -paddleVX;
-		else
-			paddle.vx = 0;
-		
+		paddle.vx = (b == true) ? -paddleVX : 0;
+		// if(b)
+// 			paddle.vx = -paddleVX;
+// 		else
+// 			paddle.vx = 0;
+// 		
 	}
 	public void setLocked(boolean b){
 		lockedEnabled = b;
@@ -1783,13 +1901,14 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 			}
 		}); //prevent Action selection
 		
-		table.getTableHeader().setResizingAllowed(false);
-		table.getTableHeader().setReorderingAllowed(false);
-		((DefaultTableCellRenderer)table.getTableHeader().getDefaultRenderer()).setHorizontalAlignment(SwingConstants.CENTER);
-		table.getTableHeader().setOpaque(false); //set transparency
-		table.getTableHeader().setBackground(new Color(1.0f, 1.0f, 1.0f, 0.1f));
-		table.getTableHeader().setFont(new Font("Arial", Font.BOLD, 20));
-		table.getTableHeader().setForeground(new Color(255, 209, 0)); //set text color to Gold
+		JTableHeader header = table.getTableHeader();
+		header.setResizingAllowed(false);
+		header.setReorderingAllowed(false);
+		((DefaultTableCellRenderer)header.getDefaultRenderer()).setHorizontalAlignment(SwingConstants.CENTER);
+		header.setOpaque(false); //set transparency
+		header.setBackground(new Color(1.0f, 1.0f, 1.0f, 0.1f));
+		header.setFont(new Font("Arial", Font.BOLD, 20));
+		header.setForeground(new Color(255, 209, 0)); //set text color to Gold
 		
 		handleTableIO();
 		
@@ -1798,7 +1917,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 		TitledBorder bdr = BorderFactory.createTitledBorder("Control List - Hover For More Info");
 		bdr.setTitleColor(Color.white);
 		group.setBorder(BorderFactory.createCompoundBorder(bdr, BorderFactory.createEmptyBorder(5,5,5,5)));
-		group.add(table.getTableHeader());
+		group.add(header);
 		group.add(table, BorderLayout.CENTER);
 		
 		tab1.add(group);
@@ -1914,7 +2033,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 }
 
 class SplashScreen extends JPanel implements MouseListener{
-	boolean showing = true;
+	boolean showing = false;
 	int screenWidth, screenHeight;
 	double gameScale = .75;
 	BufferedImage buffer, background;
