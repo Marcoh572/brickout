@@ -26,7 +26,7 @@ public class brickout {
 		GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
 		SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
 		
-		frame.addComponentListener(new ComponentAdapter(){
+		frame.addComponentListener(new ComponentAdapter(){ //deal with resizing of the window
 			@Override
 			public void componentResized(ComponentEvent e){						
 				frame.setSize(frame.getWidth(), frame.getWidth() + 22);
@@ -38,10 +38,10 @@ public class brickout {
 		frame.pack();
 		frame.setVisible(true);
 		
-		while (true){	
+		while (true){ //master loop
 			try{
 				if(showSplash){ //Splash Loop
-					if(!splash.showing()){
+					if(!splash.showing()){ //replace splash with gui
 						frame.remove(splash);
 						frame.add(gui, BorderLayout.CENTER);
 						frame.pack();
@@ -50,7 +50,7 @@ public class brickout {
 					splash.repaint();
 				}
 				else{ //Game Loop		
-					if(gui.replay){
+					if(gui.replay){ //get saved settings and create new game from those settings
 						Object[] savedSettings = gui.getSavedSettings();
 						gui.settings.frame.dispose();
 						frame.remove(gui);
@@ -59,7 +59,7 @@ public class brickout {
 						frame.pack();
 					}
 					
-					while(gui.gameOver == false){
+					while(gui.gameOver == false){ //active game loop
 						try{
 							gui.move();
 							gui.repaint();
@@ -80,12 +80,13 @@ public class brickout {
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	static int screenWidth, screenHeight; 
 	int rows = 2, cols = 7, margin = 4, frames = 0, fps = 0, bgIndex = 1;
-	int level = 1, score = 1000, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
+	int level = 1, score = 0, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
 	Point mousePos = null;
 	BufferedImage buffer, background, settingsIcon;
 	Graphics2D bg;
 	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
-	boolean paused = true, gameOver = false, replay = false, showFPS = true, cheatsActive = true, lockedEnabled = true, hsEligible = !cheatsActive;
+	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = false;
+	boolean lockedEnabled = true, hsEligible = !cheatsActive, toggledLockedOff = !lockedEnabled;
 	Settings settings;
 	Rectangle2D bottomBar, intersection;
 	Paddle paddle;
@@ -140,9 +141,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
  				bg.clearRect(0, 0, getWidth(), getHeight());
 				bg.scale(gameScale, gameScale);
 			}
-		});
+		}); //handle resizing of the window
 		
-		//loseALife(balls.get(0));
 		fpsTimer = System.currentTimeMillis();
 		startTime = fpsTimer;
 	}
@@ -158,7 +158,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				timeSinceLastBuff = 0;
 			}
 			
-			if(gameTimer >= buffTimer && activePup != null)
+			if(gameTimer >= buffTimer - 100 && activePup != null) //buffTimer - 100 so deactivates after 1 not 0
 				deactivateBuff();
 			
 			paddle.move();
@@ -167,35 +167,44 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				if(ball.stuck)
 					ball.stickTo(paddle);
 			});
+			
+			//handles ball going offscreen, hitting the paddle, and hitting a brick
 			for(Ball ball : balls){
 				if(ball.y - ball.rad >= bottomBar.getY() || ball.y + ballsize < 0){ //lose a life scenario
 					loseALife(ball);
 					return;
 				}
-				else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds()) && ball.stuck == false){ //ball hits the paddle
-					ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width);
+				else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds()) && ball.stuck == false){ //ball hits the paddle while moving/not stuck
+					ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width); //gives the ratio d/l to determine where the ball hit the paddle
 					ball.changeColor();
-					if(paddle.sticky){
+					if(paddle.sticky){ //ball hits a sticky paddle
 						ball.stuck = true;
 						paddle.hasBallStuck = true;
-						ball.dx = paddle.x - ball.x;
+						ball.dx = paddle.x - ball.x; //used to track ball location relative to paddle
 						ball.y = paddle.thisPaddle.getY() - ball.rad;
 					}
 				}
-				else if(ball.y - ball.rad <= (rows*brickheight) + margin*(rows+1)){
+				else if(ball.y - ball.rad <= (rows*brickheight) + margin*(rows+1)){ //check ball hitting a brick only if near bricks
 					for( Brick brick : exposedBricks ){
-						if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds())){
+						if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds())){ //only hit active bricks
+							
 							intersection = brick.thisBrick.createIntersection(ball.thisBall.getBounds());
 							
 							//powerballs go through bricks
-							if(intersection.getHeight() < intersection.getWidth() && !ball.power) //hit top or bottom
-								ball.vy = -ball.vy;
-							else if (intersection.getHeight() == intersection.getWidth() && !ball.power){
-								ball.vy = -ball.vy;
-								ball.vx = -ball.vx;
+							if(!ball.power){
+								int bRow = brick.row;
+								int bCol = (brick.col + 1) >= cols ? brick.col : brick.col + 1;
+							
+								if( intersection.getHeight() > intersection.getWidth() && //hit the side
+									(bricks.get(bRow).get(bCol).active == false	|| intersection.getX() == brick.x) )//hit right or left
+									ball.vx = -ball.vx;
+								else if (Math.abs(intersection.getHeight() - intersection.getWidth()) < .5){ //hit the corner of a brick
+									ball.vy = -ball.vy;
+									ball.vx = -ball.vx;
+								}
+								else //hit top or bottom
+									ball.vy = -ball.vy;
 							}
-							else if( !ball.power ) //hit left or right
-								ball.vx = -ball.vx;
 								
 							if(brick.locked && brick.thisBrick.contains(ball.x, ball.y)){
 								ball.y += brickheight;	
@@ -204,7 +213,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 							
 							ball.changeColor();
 							
-							if(!brick.locked)
+							if(!brick.locked) //change color/type of the hit brick
 								brick.type--;
 							
 							if(ball.power){ //powerballs only
@@ -212,13 +221,13 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 								removeExposedBrick(brick);
 								score += 10;
 							}
-							else if(brick.type  == -1 && !brick.locked){
+							else if(brick.type  == -1){ //deactivate brick
 								brick.deactivate();
 								removeExposedBrick(brick);
 								rollBuff(brick);
 								score += 10;
 							}
-							else if (!brick.locked)
+							else if (!brick.locked) //change color of brick if not removed
 								brick.setColor(colors[brick.type]);
 							
 							return;
@@ -230,13 +239,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			if( pups.size() > storedPups ){ //got moving pups
 				for( PowerUp pup : pups ){
 					pup.move();
-					if(pup.pupRect.intersects(paddle.thisPaddle) && storedPups < 3){
+					if(pup.pupRect.intersects(paddle.thisPaddle) && storedPups < 3){ //store pups collected by paddle if stored pups < 3
 						pup.stored = true;
-						pup.vy = 0;
+						pup.vy = 0;			//change location of stored pups
 						pup.setRect(screenWidth/2 + 100 + (storedPups * pup.width * 1.5), bottomBar.getY() + pup.height/2);
 						storedPups++;
 					}
 				}
+				//remove powerups that go past the bottom bar
 				pups.removeIf( pup -> (pup.y + pup.height/2 >= bottomBar.getY() && pup.vy != 0));
 			}
 			
@@ -247,18 +257,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 
 	@Override
 	public void paintComponent(Graphics gg){
-		frames++;
-		if(System.currentTimeMillis() - fpsTimer >= 1000){
+		
+		frames++; //increase the number of frames drawn every time we repaint
+		if(System.currentTimeMillis() - fpsTimer >= 1000){ //Track Live Frames per Second
 			fps = frames;
 			frames = 0;
 			fpsTimer = System.currentTimeMillis();
 		}
 	
-		bg.setBackground(Color.white);
+		bg.setBackground(Color.white); //only seen if the background image fails to load
 		bg.clearRect(0, 0, screenWidth, screenHeight);
 		bg.drawImage(background, 0, 0, screenWidth, screenHeight, this);
 		
-		bg.setColor(Color.black);
+		bg.setColor(Color.black); //draw the status (bottom) bar
 		bg.fill(bottomBar);
 		bg.setColor(colors[2]); //gold
 		bg.setFont(gameFont);
@@ -277,31 +288,31 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.fill(new Ellipse2D.Double(130.0, bottomBar.getY() + (getFontSize(bg) - ballsize)/2 + 2, ballsize, ballsize));
 			bg.setColor(colors[2]);
 			bg.drawString("x" + lives, 133 + (int)ballsize, (int)bottomBar.getY()  + getFontSize(bg));
-		}
+		} //more than 5 lives, show as a "Lives: ball x6"
 		
-		paddle.paint(bg);
+		paddle.paint(bg); //draw paddle
 		if(activePup != null){
-			bg.setColor(glowingColor(Color.yellow));
+			bg.setColor(glowingColor(Color.yellow)); //draw glowing border around the active powerup
 			bg.fill(new Rectangle2D.Double(activePup.pupRect.getX() - margin, activePup.pupRect.getY() - margin, 
 						activePup.pupRect.getWidth() + margin*2, activePup.pupRect.getHeight() + margin*2));	
-			paintActivePup();
+			paintActivePup(); //display active powerup. Make it flash when there are only 5 seconds left
 			bg.setColor(Color.white);
-			bg.setFont(new Font("Courier", Font.BOLD, 30));
+			bg.setFont(new Font("Courier", Font.BOLD, 30)); //display the timer for how long the powerup is active
 			bg.drawString("" + (int)(buffTimer - gameTimer)/100, (float)(activePup.x + activePup.width*.67), (float)(activePup.y + activePup.height*.2));
 			
 			if(mousePos != null && activePup.pupRect.contains(mousePos)){
 				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), activePup.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 				bg.setColor(colors[2]);
 				bg.drawString(activePup.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - getFontSize(bg)/2));	
-			}
-		}
+			} //draw powerup hover text
+		} //draw active powerup
 		for(int i = 1; i <= storedPups; i++){
 			bg.setColor(Color.white);
 			bg.setFont(new Font("Courier", Font.BOLD, 30));
-			PowerUp p = getStoredPup(i);
-			bg.drawString("" + i, (float)(p.x - p.width * .2), (float)(p.y - p.height * .667));
+			PowerUp p = getStoredPup(i); //gets the stored powerup at that index
+			bg.drawString("" + i, (float)(p.x - p.width * .2), (float)(p.y - p.height * .667)); //number above the stored pup
 			bg.fill(new Rectangle2D.Double(p.pupRect.getX() - margin, p.pupRect.getY() - margin, 
-						p.pupRect.getWidth() + margin*2, p.pupRect.getHeight() + margin*2));
+						p.pupRect.getWidth() + margin*2, p.pupRect.getHeight() + margin*2)); //draws border
 						
 			if(mousePos != null && p.pupRect.contains(mousePos)){
 				bg.setColor(colors[2]);
@@ -309,20 +320,20 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				
 				bg.drawString(p.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));	
 				
-			}
+			} //draw powerup hover text
 		
 		} //action bar number and border
-		pups.forEach( pup -> pup.paint(bg) );
+		pups.forEach( pup -> pup.paint(bg) ); //draw all powerups
 		bricks.forEach( bList -> bList.forEach( brick -> {
 			if(brick.active){
 				bg.setColor(Color.black);
 				bg.fill(new Rectangle2D.Double(brick.x - margin, brick.y - margin, brick.width + margin*2, brick.height + margin*2));
 				brick.paint(bg);
 			}
-		}));
-		try{ balls.forEach( ball -> ball.paint(bg) ); }
+		})); //draw black brick border
+		try{ balls.forEach( ball -> ball.paint(bg) ); } //draw balls. Catch ConcurrentModExcep when dealing with multiple balls
 		catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
-		
+	
 		if(paused){
 			bg.setColor(Color.red);
 			bg.setFont(gameFont.deriveFont(Font.BOLD, 120));
@@ -332,16 +343,16 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setFont(new Font("Apple Chancery", Font.ITALIC, 200));
 			bg.drawString("Level " + level, screenWidth/2 - 300, (int)bottomBar.getY() - 200);
 			
-			if(settingsIcon != null)
+			if(settingsIcon != null) //draw settings icon from image if exists
 				bg.drawImage(settingsIcon, (int)settings.icon.getX(), (int)settings.icon.getY(), (int)settings.icon.getWidth(), (int)settings.icon.getHeight(), this);
-			else{
+			else{ //draw generic settings icon if image DNE
 				bg.setColor(Color.white);
 				bg.fill(settings.icon);
 				bg.setColor(Color.black);
 				bg.setFont(new Font("Courier", Font.PLAIN, 60));
 				bg.drawString("S", (float)(settings.x + (settings.width - bg.getFontMetrics().stringWidth("S"))/2), (float)( settings.y + settings.height - 10 ));
 			}
-		}
+		} //Draw paused message and settings icon
 		if(gameOver){
 			bg.clearRect(0,0,screenWidth,screenHeight);
 			bg.setColor(Color.red);
@@ -356,21 +367,33 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
 			bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
 			bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
-		}
+			
+			if(settingsIcon != null) //draw settings icon from image if exists
+				bg.drawImage(settingsIcon, (int)settings.icon.getX(), (int)settings.icon.getY(), (int)settings.icon.getWidth(), (int)settings.icon.getHeight(), this);
+			else{ //draw generic settings icon if image DNE
+				bg.setColor(Color.white);
+				bg.fill(settings.icon);
+				bg.setColor(Color.black);
+				bg.setFont(new Font("Courier", Font.PLAIN, 60));
+				bg.drawString("S", (float)(settings.x + (settings.width - bg.getFontMetrics().stringWidth("S"))/2), (float)( settings.y + settings.height - 10 ));
+			}
+		} //Draw Game Over Screen
 		
-		if(showFPS){
+		if(showDetails){
 			bg.setFont(gameFont.deriveFont(27f));
 			bg.setColor(Color.white);
-			bg.drawString("FPS:" + fps, 10, (int)bottomBar.getY() - 5);
-			bg.drawString("GT:" + getTime(), 118, (int)bottomBar.getY() - 5);
-			bg.drawString("Speed:" + settings.speedSlider.getValue(), 320, (int)bottomBar.getY() - 5);
+			bg.drawString("FPS:" + fps, 10, (int)bottomBar.getY() - 5); //display frames per second
+			bg.drawString("GT:" + getTime(), 118, (int)bottomBar.getY() - 5); //display Game Time
+			bg.drawString("Speed:" + settings.speedSlider.getValue(), 320, (int)bottomBar.getY() - 5); //Display Paddle/Ball Speed
 			
+			if(paddle.hasBallStuck) //show the "launch the ball" text
+				drawCentered("Press " + getActionKeyBind("Action") + " to launch the ball!", (int)(paddle.thisPaddle.getY() - 50));
+				
 			bg.setFont(gameFont.deriveFont(20f));
-			if(mousePos != null)
+			if(mousePos != null) //display mouse position
 				bg.drawString("(" + (int)(mousePos.getX()*gameScale) + ", " + (int)(mousePos.getY()*gameScale) + ")", 
 								5, (int)bottomBar.getY() - 30);
-			
-		}
+		} //display the "Show Details
 		
 		Graphics2D g = (Graphics2D) gg;
 		g.drawImage(buffer, null, 0, 0);
@@ -381,34 +404,32 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
 		
-		if(inputs.size() == 0){
-			inputs.put(KeyStroke.getKeyStroke("1"), "Activate PowerUp 1");
-			inputs.put(KeyStroke.getKeyStroke("2"), "Activate PowerUp 2");
-			inputs.put(KeyStroke.getKeyStroke("3"), "Activate PowerUp 3");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, true), "Stop Paddle");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0, true), "Stop Paddle");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, true), "Stop Paddle");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, 0, true), "Stop Paddle");		
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, false), "Move Left");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0, false), "Move Right");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, false), "Move Left");
-			inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, 0, false), "Move Right");
-			inputs.put(KeyStroke.getKeyStroke("P"), "Pause");
-			inputs.put(KeyStroke.getKeyStroke("SPACE"), "Action");
-			inputs.put(KeyStroke.getKeyStroke("X"), "Cancel PowerUp");
-			inputs.put(KeyStroke.getKeyStroke("R"), "Replay");
-			inputs.put(KeyStroke.getKeyStroke("F"), "Show Details");
-			
-			//cheats
-			inputs.put(KeyStroke.getKeyStroke("UP"), "Paddle Speed ↑ / Ball Angle");
-			inputs.put(KeyStroke.getKeyStroke("DOWN"), "Paddle Speed ↓ / Ball Angle");
-			inputs.put(KeyStroke.getKeyStroke("V"), "Toggle Paddle AutoMove");
-			inputs.put(KeyStroke.getKeyStroke("B"), "Spawn Balls");
-			inputs.put(KeyStroke.getKeyStroke("M"), "Spawn PowerUp");
-		}
+		inputs.put(KeyStroke.getKeyStroke("1"), "Activate PowerUp 1");
+		inputs.put(KeyStroke.getKeyStroke("2"), "Activate PowerUp 2");
+		inputs.put(KeyStroke.getKeyStroke("3"), "Activate PowerUp 3");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, true), "Stop Paddle");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0, true), "Stop Paddle");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, true), "Stop Paddle");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, 0, true), "Stop Paddle");		
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0, false), "Move Left");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0, false), "Move Right");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, false), "Move Left");
+		inputs.put(KeyStroke.getKeyStroke(KeyEvent.VK_D, 0, false), "Move Right");
+		inputs.put(KeyStroke.getKeyStroke("P"), "Pause");
+		inputs.put(KeyStroke.getKeyStroke("SPACE"), "Action");
+		inputs.put(KeyStroke.getKeyStroke("X"), "Cancel PowerUp");
+		inputs.put(KeyStroke.getKeyStroke("R"), "Replay");
+		inputs.put(KeyStroke.getKeyStroke("F"), "Show Details");
+		
+		//cheats
+		inputs.put(KeyStroke.getKeyStroke("UP"), "Paddle Speed ↑ / Ball Angle");
+		inputs.put(KeyStroke.getKeyStroke("DOWN"), "Paddle Speed ↓ / Ball Angle");
+		inputs.put(KeyStroke.getKeyStroke("V"), "Toggle Paddle AutoMove");
+		inputs.put(KeyStroke.getKeyStroke("B"), "Spawn Balls");
+		inputs.put(KeyStroke.getKeyStroke("M"), "Spawn PowerUp");
+		
 		if(!cheatsActive) { toggleCheatBindings(false); } //remove cheats and save them if cheats are off
 		
-		actions.clear();
 		//regular actions
 		actions.put("Stop Paddle", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){	
@@ -423,14 +444,18 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		});	
 		actions.put("Move Left", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				paddle.keyPressed = true;
-				paddle.vx = -1 * paddleVX;
+				if(!paused){
+					paddle.keyPressed = true;
+					paddle.vx = -1 * paddleVX;
+				}
 			}
 		});
 		actions.put("Move Right", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){	
-				paddle.keyPressed = true;
-				paddle.vx = paddleVX;
+				if(!paused){
+					paddle.keyPressed = true;
+					paddle.vx = paddleVX;
+				}
 			}
 		});
 		actions.put("Pause", new AbstractAction(){
@@ -457,21 +482,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		});
 		actions.put("Cancel PowerUp", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if(activePup != null){
+				if(activePup != null)
 					deactivateBuff();
-				}	
 			}
 		});
 		actions.put("Replay", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if(gameOver){
+				if(gameOver)
 					replay = true;
-				}	
 			}
 		});
 		actions.put("Show Details", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				showFPS = !showFPS;
+				showDetails = !showDetails;
 			}
 		});	
 		actions.put("Activate PowerUp 1", new AbstractAction(){
@@ -508,12 +531,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public void actionPerformed(ActionEvent e){
 				if(paddle.hasBallStuck){
 					for( Ball ball : balls ){
-						if (ball.ratio > 0.0)
-							ball.ratio -= .1;
-						else
-							ball.ratio = 0.0;
+						if(ball.stuck){
+							if (ball.ratio > 0.0)
+								ball.ratio -= .1;
+							else
+								ball.ratio = 0.0;
 							
-						ball.hitThePaddle(ball.ratio);
+							ball.hitThePaddle(ball.ratio);
+						}
 					}
 				}
 				else if(paddleVX < 10)
@@ -524,12 +549,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public void actionPerformed(ActionEvent e){
 				if(paddle.hasBallStuck){
 					for( Ball ball : balls ){
-						if (ball.ratio < 1.0)
-							ball.ratio += .1;
-						else
-							ball.ratio = 1.0;
+						if(ball.stuck){
+							if (ball.ratio < 1.0)
+								ball.ratio += .1;
+							else
+								ball.ratio = 1.0;
 						
-						ball.hitThePaddle(ball.ratio);
+							ball.hitThePaddle(ball.ratio);
+						}
 					}
 				}
 				else if(paddleVX > 3.5)
@@ -559,7 +586,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 
 			}
 		});		
-	}
+	}	//Create the initial keybindings and actions. May be overridden by Saved Settings
 	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		KeyStroke oldKeyModded = KeyStroke.getKeyStroke(oldKey.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK);
@@ -580,21 +607,21 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		}catch(NullPointerException e) { System.out.println("That key does not exist in the Input Map"); }
 		
 		return false; //let the table know not to update because inputmap didnt change
-	}
+	} //method used by Settings to replace keybindings
 	public void toggleCheatBindings(boolean active){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		cheatsActive = active;
 		
 		if(!cheatsActive){ //cheats off
-			savedCheats.clear();
-			for(KeyStroke key : inputs.keys()){
+			savedCheats.clear(); //clear the previously saved cheat bindings
+			for(KeyStroke key : inputs.keys()){ //add the bindings for cheats to savedCheats map
 				if(cheatsList.contains(inputs.get(key))){
 					savedCheats.put(key, (String)inputs.get(key));
-					inputs.remove(key);
+					inputs.remove(key); //remove cheat from input map
 				}
 			}
 		}else {	//cheats on
-			savedCheats.forEach((k, v) -> {
+			savedCheats.forEach((k, v) -> { //add saved cheats back into input map 
 				KeyStroke unmoddedKey = KeyStroke.getKeyStroke(k.getKeyCode(), 0); 
 				if(inputs.get(unmoddedKey) == null) //we check if an unmodded key exists, if not we add unmodded key
 					inputs.put(unmoddedKey, v);
@@ -602,29 +629,32 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					inputs.put(KeyStroke.getKeyStroke(k.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK), v);
 			});
 		}
-	}
+	} //remove cheat bindings and save them, or add them to inputmap
 	public Object[] getSavedSettings(){
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
-		Map<KeyStroke, Object> im2 = new HashMap<KeyStroke, Object>();
+		Map<KeyStroke, Object> im2 = new HashMap<KeyStroke, Object>(); 
 		for(KeyStroke key : inputs.keys()) //make a copy of all the inputs in InputMap with <key, value>
 			im2.put(key, inputs.get(key));
-	
+		
+		//Save paddle color, speed, automove, cheatsActive status, locked bricks status, 
+		//"dont ask again" status, inputmap, gamescale, and showdetails status
 		Object[] savedSettings = { new Color(paddle.paddleColor.getRGB()), Double.valueOf(paddleVX), 
 								   Boolean.valueOf(paddle.autoMove), Boolean.valueOf(cheatsActive), Boolean.valueOf(lockedEnabled), 
-								   Boolean.valueOf(settings.dontAsk), im2, Double.valueOf(gameScale) };
+								   Boolean.valueOf(settings.dontAsk), im2, Double.valueOf(gameScale), Boolean.valueOf(showDetails) };
 		return savedSettings;
-	}
+	} //save the configurations of this game for future games
 	@SuppressWarnings("unchecked")
 	public void setSavedSettings(Object[] savedSettings){
 		gameScale = (Double)savedSettings[7];
 	
 	
-		paddle.paddleColor = (Color)savedSettings[0];
-		setDifficulty((Double)savedSettings[1] * 10);
+		paddle.paddleColor = (Color)savedSettings[0]; //set paddle color
+		setDifficulty((Double)savedSettings[1] * 10); //set speed of paddle and balls
 		
-		setAutoMove((Boolean)savedSettings[2]);
-		cheatsActive = (Boolean)savedSettings[3];
-		setLocked((Boolean)savedSettings[4]);
+		setAutoMove((Boolean)savedSettings[2]); //set automove value
+		cheatsActive = (Boolean)savedSettings[3]; //set cheatsActive value
+		setLocked((Boolean)savedSettings[4]); //set if we have locked bricks
+		showDetails = (Boolean)savedSettings[8]; //set if we want to keep displaying details
 		
 		if(savedSettings[6] != null){ //set current input map to the saved input map
 			Map<KeyStroke, Object> im = (Map<KeyStroke, Object>) savedSettings[6];
@@ -633,83 +663,85 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			for(KeyStroke key : im.keySet()) //populates inputmap with saved input map (including cheats)
 				this.getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).put(key, im.get(key));
 			if(!cheatsActive) { toggleCheatBindings(false); } //remove cheats and save them if cheats are off
-		}
+		} //set the old input map as our input
 		
-		settings = new Settings(this);
-		settings.dontAsk = (Boolean)savedSettings[5];
-	}
+		settings = new Settings(this); //create a new settings window
+		settings.dontAsk = (Boolean)savedSettings[5]; //set the dont ask boolean of the new settings window
+		
+	} //implement the saved configurations from past games into this game
 	
 	//high scores methods
 	public void createAndDisplayHighScores(){
 		InputStream highscores;
-		try{ highscores = GUI.class.getResourceAsStream("highscores.csv"); }
-		catch(NullPointerException e) { System.out.println("highscores.csv Not Found"); return; }
-		if(highscores == null){
-			try{ highscores = GUI.class.getResourceAsStream("blankscores.csv"); }
-			catch(NullPointerException e) { System.out.println("blankscores.csv Not Found"); return; }
-		}
-		Scanner reader = (new Scanner(highscores)).useDelimiter(",");
+		highscores = GUI.class.getResourceAsStream("highscores.csv");
+		if(highscores == null)
+			highscores = GUI.class.getResourceAsStream("blankscores.csv");  //use blank high scores
+		if(highscores == null)
+			return;
+			
+		Scanner reader = new Scanner(highscores);
 		
 		String headerData[] = new String[6]; //Read Header Data
 		if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); }
-		String hd[] = headerData;
 		
 		Object[][] hsData = new Object[7][headerData.length]; //Read High Score Data
 		int row = 0;
 		while(reader.hasNextLine()){
-			String linedata[] = reader.nextLine().split(",");
+			String linedata[] = reader.nextLine().split(","); //get the line data split by the comma
 			for( int col = 0; col < linedata.length; col++){
-				switch(col){
-					case 0: hsData[row][col] = linedata[col].equals("-") ? "-" : linedata[col]; break; //Name
+				switch(col){ //populate the table data arrays row by row
+					case 0: hsData[row][col] = linedata[col]; break; //Name
 					case 1: hsData[row][col] = linedata[col].equals("-") ? Integer.valueOf(0) : Integer.valueOf(linedata[col]); break; //Score
 					case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]); break; //Level
-					case 3: hsData[row][col] = linedata[col].equals("-") ? "-" : linedata[col]; break; //Time
+					case 3: hsData[row][col] = linedata[col]; break; //Time
 					case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
-					case 5: hsData[row][col] = linedata[col].equals("-") ? "-" : linedata[col]; break; //Locked Bricks
+					case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
 				}
 			}
-			row++;
-		}
+			row++; //at the end of the column, move to the next row
+		} //populate high score table data
 		
-		if(hsEligible && (hsData[6][1] instanceof String || score > (Integer)hsData[6][1])) //handle if a new high score should be added
+		if(hsEligible && score > (Integer)hsData[6][1]) //new high score if eligible and score > lowest score on table
 			newHighScore( hsData );
 		
-		JTable hsTable = setUpTable(hsData, headerData);
-		JLabel hsText = new JLabel("High Scores"){
+		JTable hsTable = setUpTable(hsData, headerData); //create a custom JTable with the data
+		JLabel hsTitle = new JLabel("High Scores"){ 
 			public boolean isOpaque(){
 				setFont(new Font("Apple Chancery", Font.PLAIN, (int)(80 * gameScale)));
 				setForeground(colors[2]);
 				setHorizontalAlignment(SwingConstants.CENTER);
 				return false;
 			}
-		};
+		}; //Create a custom JLabel as a Title for our Table
 		JPanel tablePanel = new JPanel(){
 			@Override
 			public boolean isOpaque(){
-				add(hsText);
+				add(hsTitle);
 				add(hsTable.getTableHeader());
 				add(hsTable);
 				return false;
 			}
-		};
+		};//Create a JPanel to hold our title, tableheader, and table		
 		
-		
+		//Create an invisible box to move our table below the Game Over text
 		Component invisBox = Box.createRigidArea(new Dimension(1, (int)(screenHeight * gameScale * .3)));
+		
 		setLayout(new BoxLayout(this, BoxLayout.PAGE_AXIS));
+		//add our high scores and invisible box to our GUI
 		add(invisBox);
 		add(tablePanel);
 		
 		tablePanel.addComponentListener(new ComponentAdapter(){
 			@Override
 			public void componentResized(ComponentEvent e){
-				hsTable.setFont(gameFont.deriveFont(25f * (float)gameScale));
-				hsTable.getTableHeader().setFont(gameFont.deriveFont(34f * (float)gameScale));
-				hsText.setFont(new Font("Apple Chancery", Font.PLAIN, (int)(80 * gameScale)));
+				hsTable.setFont(gameFont.deriveFont(25f * (float)gameScale)); //adjust table font
+				hsTable.getTableHeader().setFont(gameFont.deriveFont(34f * (float)gameScale)); //adjust header font
+				hsTitle.setFont(new Font("Apple Chancery", Font.PLAIN, (int)(80 * gameScale))); //adjust title font
 				resizeTableCols(hsTable);
 				invisBox.setPreferredSize(new Dimension(1, (int)(screenHeight * gameScale * .3)));
 			}
-		});
-	}
+		}); //Adjust the size of our text (and table) based off the changing sizes of our window
+	} //handles the creation, addition, and resizing of our High Scores Table/Title
 	public JTable setUpTable(Object[][] hsData, String[] headerData){
 		JTable table = new JTable(hsData, headerData){
 			@Override
@@ -720,22 +752,15 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			public boolean isCellSelected(int row, int col){
 				return false;
 			}
-			// 
-// 			@Override
-// 			public Dimension getPreferredSize(){
-// 				return new Dimension((int)(screenWidth * gameScale * .5), this.getHeight());
-// 			}
-		};
+		}; //Cells are non-editable and non-selectable
 		
 		table.setOpaque(false); //set transparency
 		table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		table.setShowGrid(false);
-		//table.setShowHorizontalLines(false);
 		table.setCellSelectionEnabled(false);
 		table.setFont(gameFont.deriveFont(25f * (float)gameScale));
 		table.setForeground(colors[2]); //set text color to gold
-		table.setSelectionForeground(colors[2]);
-		//((DefaultTableCellRenderer)table.getDefaultRenderer(Object.class)).setOpaque(false);
+		//table.setSelectionForeground(colors[2]);
 		((DefaultTableCellRenderer)table.getDefaultRenderer(Object.class)).setBackground(new Color(0f, 0f, 0f, 0.5f));
 		
 		JTableHeader header = table.getTableHeader();
@@ -750,7 +775,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		resizeTableCols(table); //resize table columns for current font size
 		
 		return table;
-	}
+	} //Creates a custom table of high scores from given data
 	public void resizeTableCols(JTable table){
 		TableColumnModel model = table.getColumnModel();
 		JTableHeader header = table.getTableHeader();
@@ -794,7 +819,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			name = JOptionPane.showInputDialog(this, "New High Score!! Enter Name Below:");
 	
 		Object newHS[] = { name, Integer.valueOf(score), Integer.valueOf(level), getTime(), 
-							Double.valueOf(getAvgSpeed()), lockedEnabled ? "Yes" : "No" };
+							Double.valueOf(getAvgSpeed()), toggledLockedOff ? "No" : "Yes" };
 		for(int i = 0; i < newHS.length; i++)
 			hsData[6][i] = newHS[i];
 		
@@ -1026,7 +1051,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		paused = true;
 		balls.clear();
 		balls.add(new Ball(ballsize/2));
-		paddle = new Paddle(paddle.autoMove, paddle.paddleColor);
+		paddle.setX(screenWidth/2);
+		paddle.vx = -paddleVX;
 		setDifficulty((double)settings.speedSlider.getValue());
 		level++;
 		if(lives < 3)
@@ -1039,6 +1065,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		else
 			rows++;
 		populateBricks();
+		repaint();
+		revalidate();
 	}
 	public void changeBackground(){
 		if( bgIndex > 5 )
@@ -1099,7 +1127,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			pup.activate();
 			activePup = pup;
 			storedPups--;
-			buffTimer = gameTimer + 1500; //1 gameTimer = 1/100th of a second. so 1500 = 15 seconds
+			buffTimer = gameTimer + 1600; //1 gameTimer = 1/100th of a second. so 1600 - 100 = 15 seconds
 		}
 		
 		switch (pup.type){
@@ -1204,6 +1232,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					brick.setColor(colors[brick.type]);
 				}
 			}));
+			toggledLockedOff = true;
 		}
 		else if(numLocked == 0){ //put in some random locked bricks if none were locked previously
 			bricks.forEach( bList -> bList.forEach( brick -> {
@@ -1266,6 +1295,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			}
 		}
 		
+		//show settings window when the icon is clicked
 		if(paused && settings.icon.contains(e.getX() * 1/gameScale, e.getY() * 1/gameScale))
 			settings.frame.setVisible(true);
 	}
@@ -1273,7 +1303,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseExited(MouseEvent e) {
 		mousePos = null;
 	}
-	public void mouseDragged(MouseEvent e){}
+	public void mouseDragged(MouseEvent e){
+		paddle.setX(e.getX() * 1/gameScale);
+	}
 	public void mouseMoved(MouseEvent e){
 		mousePos = e.getPoint();
 		mousePos.setLocation(e.getX() * 1/gameScale, e.getY() * 1/gameScale);
@@ -1338,6 +1370,10 @@ class Paddle{
 		width = w;
 		thisPaddle.setRect(x - width/2, y - height/2, width, height);
 	}
+	public void setX(double x){
+		this.x = x;
+		thisPaddle.setFrame(x - width/2, y - height/2, width, height);
+	}
 	
 	public boolean collidingRightEdge(){
 		return (x + (width/2)) >= screenW;
@@ -1351,7 +1387,7 @@ class Paddle{
 		g.fill(thisPaddle);
 		// g.setFont(new Font("American Typewriter", Font.BOLD, 15));
 // 		g.setColor(Color.white);
-// 		g.drawString("" + vx, (float)x - 15, (float)y);
+// 		g.drawString("" + x, (float)x - 15, (float)y);
 
 	}
 }
@@ -1427,20 +1463,20 @@ class Ball extends Paddle {
 			vx = -vx;
 			changeColor();
 		}
-		else if(y - rad < 0 && vy < 0){ //top edge
+		else if(y - rad < 0 && vy < 0){ //top edge ricochet
 			if(!power){
 				vy = -vy;
 				changeColor();
 			}
 		}
 	
-		if(Math.abs(vy) < Math.hypot(3,3)/2){
+		if(Math.abs(vy) < Math.hypot(3,3)/2){ //prevent the ball's angle from being too shallow
 			double r = Math.hypot(vx, vy);
 			vy = Math.signum(vy) * r / 2;
 			vx = Math.signum(vx) * Math.sqrt(r*r - vy*vy);
 		}
 			
-		if(!stuck){
+		if(!stuck){ //only move if not stuck
 			x += vx * speed;
 			y += vy * speed;
 		}
@@ -1646,7 +1682,7 @@ class PowerUp extends Paddle{
 	public void activate(){
 		active = true;
 		stored = false;
-		setRect(screenW/2 - width/2, screenH - 80 - height/3);
+		setRect(screenW/2 - width/2 + 30, screenH - 80 - height/3);
 	}
 	
 	public String toString(){
@@ -2112,7 +2148,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 			else
 				autoMove.setForeground(Color.black);
 		}
-		else if("cheat".equals(e.getActionCommand())){
+		else if("cheat".equals(e.getActionCommand()) && !gui.gameOver){
 			int cheatConfirmation = 0;
 			if(cheats.isSelected() == false && dontAsk == false)
 				cheatConfirmation = confirmCheatToggle();
@@ -2142,7 +2178,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{
 }
 
 class SplashScreen extends JPanel implements MouseListener{
-	boolean showing = false;
+	boolean showing = true;
 	int screenWidth, screenHeight;
 	double gameScale = .75;
 	BufferedImage buffer, background;
