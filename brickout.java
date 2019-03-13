@@ -675,20 +675,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		highscores = GUI.class.getResourceAsStream("highscores.csv");
 		
 		String headerData[] = {"Name", "Score", "Level", "Time", "Avg Speed", "Locked?"}; //Default to Blank Header Data
-		Object[][] hsData = { {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,  //Default to Blank High Score Data
+		Object[][] hsData = { {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} , 
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
-							 // {"", Integer.valueOf(9999999), "21", "9999:99:99", "100" ,"Yes"} ,
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} 
-							};
+							}; //Default to Blank High Score Data
 		
 		if(highscores != null){
 			Scanner reader = new Scanner(highscores);
 				
-			if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); }
+			if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); } //populate header data from file
 				
 			int row = 0;
 			while(reader.hasNextLine()){
@@ -704,21 +703,22 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					}
 				}
 				row++; //at the end of the column, move to the next row
-			} //populate high score table data
+			} //populate high score table data from file
 			
 			reader.close();
-		}
+		} //replace defaults with file input if file exists
 		
 		int rowIndex = -1; //row index of new high score
 		if(hsEligible && score > (Integer)hsData[6][1]){ //new high score if eligible and score > lowest score on table
 			newHighScore(hsData);
 			for(int i = 0; i < hsData.length; i++){
-				if( ((String)hsData[i][0]).equals("...") ){
+				if( ((String)hsData[i][0]).equals("...") ){ //initial new high score name is "..."
 					rowIndex = i;
 					break;
 				}
 			}
-		}
+		} //handle new high score before creating table
+		
 		JTable hsTable = setUpTable(hsData, headerData); //create a custom JTable with the data
 		JLabel hsTitle = new JLabel("High Scores"){ 
 			public boolean isOpaque(){
