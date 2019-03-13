@@ -382,9 +382,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		if(showDetails){
 			bg.setFont(gameFont.deriveFont(27f));
 			bg.setColor(Color.white);
-			bg.drawString("FPS:" + fps, 10, (int)bottomBar.getY() - 5); //display frames per second
-			bg.drawString("GT:" + getTime(), 118, (int)bottomBar.getY() - 5); //display Game Time
-			bg.drawString("Speed:" + settings.speedSlider.getValue(), 320, (int)bottomBar.getY() - 5); //Display Paddle/Ball Speed
+			bg.drawString(" FPS:" + fps +  " GT:" + getTime() +  " Speed:" + //Display FPS, GameTime, and Speed of paddle/ball
+							settings.speedSlider.getValue(), 0, (int)bottomBar.getY() - 5);
 			
 			if(paddle.hasBallStuck) //show the "launch the ball" text
 				drawCentered("Press " + getActionKeyBind("Action") + " to launch the ball!", (int)(paddle.thisPaddle.getY() - 50));
@@ -674,36 +673,52 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void createAndDisplayHighScores(){
 		InputStream highscores;
 		highscores = GUI.class.getResourceAsStream("highscores.csv");
-		if(highscores == null)
-			highscores = GUI.class.getResourceAsStream("blankscores.csv");  //use blank high scores
-		if(highscores == null)
-			return;
+		
+		String headerData[] = {"Name", "Score", "Level", "Time", "Avg Speed", "Locked?"}; //Default to Blank Header Data
+		Object[][] hsData = { {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,  //Default to Blank High Score Data
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
+							 // {"", Integer.valueOf(9999999), "21", "9999:99:99", "100" ,"Yes"} ,
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} ,
+							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} 
+							};
+		
+		if(highscores != null){
+			Scanner reader = new Scanner(highscores);
+				
+			if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); }
+				
+			int row = 0;
+			while(reader.hasNextLine()){
+				String linedata[] = reader.nextLine().split(","); //get the line data split by the comma
+				for( int col = 0; col < linedata.length; col++){
+					switch(col){ //populate the table data arrays row by row
+						case 0: hsData[row][col] = linedata[col]; break; //Name
+						case 1: hsData[row][col] = linedata[col].equals("-") ? Integer.valueOf(0) : Integer.valueOf(linedata[col]); break; //Score
+						case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]); break; //Level
+						case 3: hsData[row][col] = linedata[col]; break; //Time
+						case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
+						case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
+					}
+				}
+				row++; //at the end of the column, move to the next row
+			} //populate high score table data
 			
-		Scanner reader = new Scanner(highscores);
+			reader.close();
+		}
 		
-		String headerData[] = new String[6]; //Read Header Data
-		if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); }
-		
-		Object[][] hsData = new Object[7][headerData.length]; //Read High Score Data
-		int row = 0;
-		while(reader.hasNextLine()){
-			String linedata[] = reader.nextLine().split(","); //get the line data split by the comma
-			for( int col = 0; col < linedata.length; col++){
-				switch(col){ //populate the table data arrays row by row
-					case 0: hsData[row][col] = linedata[col]; break; //Name
-					case 1: hsData[row][col] = linedata[col].equals("-") ? Integer.valueOf(0) : Integer.valueOf(linedata[col]); break; //Score
-					case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]); break; //Level
-					case 3: hsData[row][col] = linedata[col]; break; //Time
-					case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
-					case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
+		int rowIndex = -1; //row index of new high score
+		if(hsEligible && score > (Integer)hsData[6][1]){ //new high score if eligible and score > lowest score on table
+			newHighScore(hsData);
+			for(int i = 0; i < hsData.length; i++){
+				if( ((String)hsData[i][0]).equals("...") ){
+					rowIndex = i;
+					break;
 				}
 			}
-			row++; //at the end of the column, move to the next row
-		} //populate high score table data
-		
-		if(hsEligible && score > (Integer)hsData[6][1]) //new high score if eligible and score > lowest score on table
-			newHighScore( hsData );
-		
+		}
 		JTable hsTable = setUpTable(hsData, headerData); //create a custom JTable with the data
 		JLabel hsTitle = new JLabel("High Scores"){ 
 			public boolean isOpaque(){
@@ -721,16 +736,18 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				add(hsTable);
 				return false;
 			}
-		};//Create a JPanel to hold our title, tableheader, and table		
+		}; //Create a JPanel to hold our title, tableheader, and table		
 		
 		//Create an invisible box to move our table below the Game Over text
-		Component invisBox = Box.createRigidArea(new Dimension(1, (int)(screenHeight * gameScale * .3)));
+		Component invisBox = Box.createRigidArea(new Dimension(1, (int)(screenHeight * gameScale * .35)));
 		
 		setLayout(new BoxLayout(this, BoxLayout.PAGE_AXIS));
 		//add our high scores and invisible box to our GUI
 		add(invisBox);
 		add(tablePanel);
+		revalidate(); //revalidate is necessary to see the components we just added
 		
+		//Adjust the size of our text (and table) based off the changing sizes of our window
 		tablePanel.addComponentListener(new ComponentAdapter(){
 			@Override
 			public void componentResized(ComponentEvent e){
@@ -738,9 +755,44 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				hsTable.getTableHeader().setFont(gameFont.deriveFont(34f * (float)gameScale)); //adjust header font
 				hsTitle.setFont(new Font("Apple Chancery", Font.PLAIN, (int)(80 * gameScale))); //adjust title font
 				resizeTableCols(hsTable);
-				invisBox.setPreferredSize(new Dimension(1, (int)(screenHeight * gameScale * .3)));
+				invisBox.setPreferredSize(new Dimension(1, (int)(screenHeight * gameScale * .35)));
 			}
-		}); //Adjust the size of our text (and table) based off the changing sizes of our window
+		});
+
+		//Take care of the missing name on the new high score
+		if(rowIndex != -1){
+			int tableWidth = hsTable.getPreferredSize().width - hsTable.getColumnModel().getColumn(0).getPreferredWidth();
+			
+			JLabel inputLabel = new JLabel("Enter Name Below:"){
+				@Override
+				public Font getFont(){
+					setHorizontalAlignment(SwingConstants.CENTER);
+					return new Font("Apple Chancery", Font.BOLD, 20);
+				}
+			
+			}; //Our message to get the name
+			
+			//Loop until we reach a valid name input
+			String name = JOptionPane.showInputDialog(this, inputLabel, "New High Score!!", JOptionPane.QUESTION_MESSAGE);
+			while( !isHighScoreNameValid(name, this.getPreferredSize().width - tableWidth)){
+				inputLabel.setForeground(Color.red);
+				if(name == null || name.isEmpty()){ //update the label depending on name entered
+					inputLabel.setText("Enter Name Below:");
+					inputLabel.setForeground(Color.black);
+				} 
+				else if (!name.matches( "(\\w[\\w\\s]*\\w)|\\w"))
+					inputLabel.setText("Incorrect Name Format");
+				else
+					inputLabel.setText("Incorrect Name Length");
+				
+				name = JOptionPane.showInputDialog(this, inputLabel, "New High Score!!", JOptionPane.QUESTION_MESSAGE);
+			}
+			
+			hsTable.setValueAt(name, rowIndex, 0); 	//update the "..." to a valid name
+			resizeTableCols(hsTable);				//resize the table to accomodate new name
+			updateHighScoresFile(hsData);			//now that the table data is correct, update the file
+		}
+		
 	} //handles the creation, addition, and resizing of our High Scores Table/Title
 	public JTable setUpTable(Object[][] hsData, String[] headerData){
 		JTable table = new JTable(hsData, headerData){
@@ -760,7 +812,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		table.setCellSelectionEnabled(false);
 		table.setFont(gameFont.deriveFont(25f * (float)gameScale));
 		table.setForeground(colors[2]); //set text color to gold
-		//table.setSelectionForeground(colors[2]);
 		((DefaultTableCellRenderer)table.getDefaultRenderer(Object.class)).setBackground(new Color(0f, 0f, 0f, 0.5f));
 		
 		JTableHeader header = table.getTableHeader();
@@ -805,31 +856,38 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					}
 				}); 
 			}
-			//System.out.println("width for column " + col + ": " + width + "  |  totalColWidth: " + totalColWidth);
 		}
 		
 		model.setColumnMargin(5);
-		table.setRowHeight(tableFM.getHeight() + 5);
-		//System.out.println(header.getColumnModel().getColumnMargin());
-	
-	}
+		table.setRowHeight(tableFM.getHeight() + 5);	
+	} //auto-sizes columns/table by largest column widths
 	public void newHighScore(Object[][] hsData){
-		String name = JOptionPane.showInputDialog(this, "New High Score!! Enter Name Below:");
-		while(name == null || name.isEmpty() || !name.matches("\\w*"))
-			name = JOptionPane.showInputDialog(this, "New High Score!! Enter Name Below:");
-	
-		Object newHS[] = { name, Integer.valueOf(score), Integer.valueOf(level), getTime(), 
+		//Data for the new highscore. Name to be entered after to account for tableWidth changes
+		Object newHS[] = { "...", Integer.valueOf(score), Integer.valueOf(level), getTime(), 
 							Double.valueOf(getAvgSpeed()), toggledLockedOff ? "No" : "Yes" };
 		for(int i = 0; i < newHS.length; i++)
-			hsData[6][i] = newHS[i];
+			hsData[6][i] = newHS[i]; //replace the last row
 		
-		Arrays.sort(hsData, (a, b) -> Integer.compare((Integer)(b[1]), (Integer)(a[1])));
+		Arrays.sort(hsData, (a, b) -> Integer.compare((Integer)(b[1]), (Integer)(a[1]))); //sort the table be score (decreasing)
+	}	//Replaces the last high score with the new one and sorts it
+	public boolean isHighScoreNameValid(String name, int availableWidth){
 		
+		if(name == null || name.isEmpty() || !name.matches( "(\\w[\\w\\s]*\\w)|\\w"))
+			return false; //regex states either a single letter or multiple letters/nums/spaces that begin and end in a letter
 		
+		FontMetrics tableFM = getFontMetrics(gameFont.deriveFont(25f * (float)gameScale));
+		int nameWidth = tableFM.stringWidth(name); //get the size of the name
+		//check if the name fits in the available space
+		if(nameWidth >= availableWidth - 5)
+			return false;
+	
+		return true;
+	} //returns true if a valid name
+	public void updateHighScoresFile(Object[][] hsData){	
 		try(FileWriter f = new FileWriter("highscores.csv"); 
 			BufferedWriter b = new BufferedWriter(f); PrintWriter p = new PrintWriter(b);) {
 			
-			p.println("Name,Score,Level,Time,Avg Speed,Locked Bricks");
+			p.println("Name,Score,Level,Time,Avg Speed,Locked?"); //header
 			
 			for(int i = 0; i < hsData.length; i++){
 				for(int j = 0; j < hsData[i].length; j++){
@@ -843,20 +901,23 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			p.close();
 				
 		} catch(IOException ex) {System.out.println("Couldn't Create New HighScores File");}	
-	}
+	} //Creates/Overwrites the highscores file
 	
 	//utility methods
 	public String getTime(){
 		int minutes = (int)(gameTimer/6000);
 		int seconds = (int)(gameTimer % 6000) /100 ;
 		int milliseconds = (int)(gameTimer % 100);
+		String ms = "" + milliseconds;
+		if(milliseconds < 10) //guarantees milliseconds has two digits
+			ms = "0" + milliseconds;
 		
-		return minutes + ":" + seconds + ":" + milliseconds;
-	}
+		return minutes + ":" + seconds + ":" + ms;
+	} //Return a String Representation of Game Timer
 	public void drawCentered(String str, int y){
 		int centerX = (screenWidth - bg.getFontMetrics().stringWidth(str))/2;
 		bg.drawString(str, centerX, y);
-	}
+	} //calculates the X value required for centered text and draws it
 	public int getCenterForMaxFont(int height, String str, int fontsize){
 		bg.setFont(gameFont.deriveFont((float)fontsize));
 		FontMetrics metrics = bg.getFontMetrics();
@@ -871,13 +932,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		return centerX;
 		
-	}
+	} //recursively calculates max fontsize and returns the X value to draw the string
 	public int getFontSize(Graphics2D b){
-		String mets = b.getFontMetrics().toString();
-		mets = mets.substring(mets.indexOf("size"), mets.indexOf("]"));
-		
-		return Integer.parseInt(mets.substring(5));
-	}
+		return b.getFont().getSize();
+	} //helper method to get current fontsize
 	public Color glowingColor(Color c){
 		int glowSpeed = 5;
 		int max = 256 * 2 / glowSpeed;
@@ -1303,9 +1361,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseExited(MouseEvent e) {
 		mousePos = null;
 	}
-	public void mouseDragged(MouseEvent e){
-		paddle.setX(e.getX() * 1/gameScale);
-	}
+	public void mouseDragged(MouseEvent e){}
 	public void mouseMoved(MouseEvent e){
 		mousePos = e.getPoint();
 		mousePos.setLocation(e.getX() * 1/gameScale, e.getY() * 1/gameScale);
