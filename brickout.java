@@ -79,16 +79,17 @@ public class brickout {
 	
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	static int screenWidth, screenHeight; 
-	int rows = 2, cols = 7, margin = 4, frames = 0, fps = 0, bgIndex = 1;
+	int rows = 2, cols = 7, margin = 4, frames = 0, fps = 0;
 	int level = 1, score = 0, lives = 3, storedPups = 0, ballMultiplier = 3, timeSinceLastBuff = 0, numLocked = 0;
 	Point mousePos = null;
 	BufferedImage buffer, background, settingsIcon;
 	Graphics2D bg;
-	double ballsize = 30, brickheight, gameScale =  .75, fpsTimer, startTime, gameTimer = 0, buffTimer = 0, paddleVX = 0;
-	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = false;
+	double ballsize = 30, brickheight, gameScale =  .75, paddleVX = 0;
+	double fpsTimer, startTime, gameTimer = 0, buffTimer = 0, totalSpeed, prevGameTime = 1;
+	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = true;
 	boolean lockedEnabled = true, hsEligible = !cheatsActive, toggledLockedOff = !lockedEnabled;
 	Settings settings;
-	Rectangle2D bottomBar, intersection;
+	Rectangle2D bottomBar, scoreRect;
 	Paddle paddle;
 	ArrayList<Ball> balls = new ArrayList<Ball>();
 	ArrayList<ArrayList<Brick>> bricks = new ArrayList<ArrayList<Brick>>();
@@ -96,7 +97,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	ArrayList<PowerUp> pups = new ArrayList<PowerUp>();
 	java.util.List<String> cheatsList = Arrays.asList("Paddle Speed ↑ / Ball Angle", "Paddle Speed ↓ / Ball Angle", "Toggle Paddle AutoMove", "Spawn Balls", "Spawn PowerUp");
 	Map<KeyStroke, String> savedCheats = new HashMap<KeyStroke, String>();
-	ArrayList<Tuple> speedInfo = new ArrayList<Tuple>();
 	PowerUp activePup;
 	Color colors[] = { new Color(220, 0, 0), new Color(250, 150, 0), new Color(255, 209, 0), 
 					   new Color(0, 220, 0), new Color(0, 220, 200), new Color(0, 0, 220), new Color(150, 0, 200) };
@@ -143,8 +143,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			}
 		}); //handle resizing of the window
 		
+		totalSpeed = paddleVX * 10;
 		fpsTimer = System.currentTimeMillis();
-		startTime = fpsTimer;
+		startTime = System.currentTimeMillis();
 	}
 
 	public void move(){
@@ -152,13 +153,17 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			if(System.currentTimeMillis() - startTime >= 10) //increase gameTimer every 1/100th of a second
 				gameTimer++;
 			
+			if(gameTimer % 100 == 99) //every 1 second
+				updateInstantAvgSpeed();
+			
 			timeSinceLastBuff++;
 			if(timeSinceLastBuff > 5400 * 2){ //spawn a powerup after 2 minutes without one
 				pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
 				timeSinceLastBuff = 0;
 			}
 			
-			if(gameTimer >= buffTimer - 100 && activePup != null) //buffTimer - 100 so deactivates after 1 not 0
+			if(activePup != null && (gameTimer >= buffTimer - 100 ||	//buffTimer - 100 so deactivates after 1 not 0
+								 	(activePup.type == PowerUp.Type.MULT_BALLS && balls.size() == 1)) ) //deactivate MultiBalls if only one ball left
 				deactivateBuff();
 			
 			paddle.move();
@@ -169,72 +174,64 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			});
 			
 			//handles ball going offscreen, hitting the paddle, and hitting a brick
-			for(Ball ball : balls){
-				if(ball.y - ball.rad >= bottomBar.getY() || ball.y + ballsize < 0){ //lose a life scenario
-					loseALife(ball);
-					return;
-				}
-				else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds()) && ball.stuck == false){ //ball hits the paddle while moving/not stuck
-					ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width); //gives the ratio d/l to determine where the ball hit the paddle
-					ball.changeColor();
-					if(paddle.sticky){ //ball hits a sticky paddle
-						ball.stuck = true;
-						paddle.hasBallStuck = true;
-						ball.dx = paddle.x - ball.x; //used to track ball location relative to paddle
-						ball.y = paddle.thisPaddle.getY() - ball.rad;
+			try{ 
+				for(Ball ball : balls){
+					if(ball.y - ball.rad >= bottomBar.getY() || ball.y + ballsize < 0){ //lose a life scenario
+						loseALife(ball);
+						return;
 					}
-				}
-				else if(ball.y - ball.rad <= (rows*brickheight) + margin*(rows+1)){ //check ball hitting a brick only if near bricks
-					for( Brick brick : exposedBricks ){
-						if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds())){ //only hit active bricks
-							
-							intersection = brick.thisBrick.createIntersection(ball.thisBall.getBounds());
-							
-							//powerballs go through bricks
-							if(!ball.power){
-								int bRow = brick.row;
-								int bCol = (brick.col + 1) >= cols ? brick.col : brick.col + 1;
-							
-								if( intersection.getHeight() > intersection.getWidth() && //hit the side
-									(bricks.get(bRow).get(bCol).active == false	|| intersection.getX() == brick.x) )//hit right or left
-									ball.vx = -ball.vx;
-								else if (Math.abs(intersection.getHeight() - intersection.getWidth()) < .5){ //hit the corner of a brick
-									ball.vy = -ball.vy;
-									ball.vx = -ball.vx;
-								}
-								else //hit top or bottom
-									ball.vy = -ball.vy;
-							}
-								
-							if(brick.locked && brick.thisBrick.contains(ball.x, ball.y)){
-								ball.y += brickheight;	
-								ball.vy = -1 * Math.abs(ball.vy);	
-							}
-							
-							ball.changeColor();
-							
-							if(!brick.locked) //change color/type of the hit brick
-								brick.type--;
-							
-							if(ball.power){ //powerballs only
-								brick.deactivate();
-								removeExposedBrick(brick);
-								score += 10;
-							}
-							else if(brick.type  == -1){ //deactivate brick
-								brick.deactivate();
-								removeExposedBrick(brick);
-								rollBuff(brick);
-								score += 10;
-							}
-							else if (!brick.locked) //change color of brick if not removed
-								brick.setColor(colors[brick.type]);
-							
-							return;
+					else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds()) && ball.stuck == false){ //ball hits the paddle while moving/not stuck
+						ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width); //gives the ratio d/l to determine where the ball hit the paddle
+						ball.changeColor();
+						if(paddle.sticky){ //ball hits a sticky paddle
+							ball.stuck = true;
+							paddle.hasBallStuck = true;
+							ball.dx = paddle.x - ball.x; //used to track ball location relative to paddle
+							ball.y = paddle.thisPaddle.getY() - ball.rad;
 						}
 					}
-				}			
-			}
+					else if(ball.y - ball.rad <= (rows*brickheight) + margin*(rows+1)){ //check ball hitting a brick only if near bricks
+						for( Brick brick : exposedBricks ){
+							if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds())){ //only hit active bricks
+														
+								//powerballs go through bricks
+								if(!ball.power){
+									if( (ball.y >= brick.y + brick.height) || (ball.y <= brick.y) ) //ball hits brick from above or below
+										ball.vy = -ball.vy;
+									else if( (ball.x <= brick.x) || (ball.x >= brick.x + brick.width) ) //ball hits brick from the side
+										ball.vx = -ball.vx;
+									else{ //ball's (x,y) is inside the brick
+										ball.vy = -1 * Math.abs(ball.vy); //ball goes down
+										ball.y += brick.y + brick.height - ball.y + ballsize;	
+									}
+								}
+							
+								ball.changeColor();
+							
+								if(!brick.locked) //change color/type of the hit brick
+									brick.type--;
+							
+								if(ball.power){ //powerballs only
+									brick.deactivate();
+									removeExposedBrick(brick);
+									score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //score goes up relative to average speed
+								}
+								else if(brick.type  == -1){ //deactivate brick
+									brick.deactivate();
+									removeExposedBrick(brick);
+									rollBuff(brick);
+									score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //if average speed was 50 then score += 10 * 125%
+								}
+								else if (!brick.locked) //change color of brick if not removed
+									brick.setColor(colors[brick.type]);
+							
+								return;
+							}
+						}
+					}			
+					else if(ball.power && ball.y + ball.rad < 0){ balls.remove(ball); } //remove powerballs once they go off screen
+				}
+			} catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
 			
 			if( pups.size() > storedPups ){ //got moving pups
 				for( PowerUp pup : pups ){
@@ -257,7 +254,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 
 	@Override
 	public void paintComponent(Graphics gg){
-		
 		frames++; //increase the number of frames drawn every time we repaint
 		if(System.currentTimeMillis() - fpsTimer >= 1000){ //Track Live Frames per Second
 			fps = frames;
@@ -276,6 +272,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
 		bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
 		bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
+		scoreRect = new Rectangle.Double((double)(screenWidth - 250), bottomBar.getY(), 250, (double)(getFontSize(bg) + 5));
 		
 		if( lives <= 5){
 			for( int i = 0; i < lives; i++){
@@ -291,7 +288,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		} //more than 5 lives, show as a "Lives: ball x6"
 		
 		paddle.paint(bg); //draw paddle
-		if(activePup != null){
+		if(activePup != null){ //draw active powerup
 			bg.setColor(glowingColor(Color.yellow)); //draw glowing border around the active powerup
 			bg.fill(new Rectangle2D.Double(activePup.pupRect.getX() - margin, activePup.pupRect.getY() - margin, 
 						activePup.pupRect.getWidth() + margin*2, activePup.pupRect.getHeight() + margin*2));	
@@ -300,12 +297,13 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setFont(new Font("Courier", Font.BOLD, 30)); //display the timer for how long the powerup is active
 			bg.drawString("" + (int)(buffTimer - gameTimer)/100, (float)(activePup.x + activePup.width*.67), (float)(activePup.y + activePup.height*.2));
 			
-			if(mousePos != null && activePup.pupRect.contains(mousePos)){
+			if(mousePos != null && activePup.pupRect.contains(mousePos)){ //draw powerup hover text
 				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), activePup.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 				bg.setColor(colors[2]);
+				bg.setFont(gameFont);
 				bg.drawString(activePup.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - getFontSize(bg)/2));	
-			} //draw powerup hover text
-		} //draw active powerup
+			} 
+		} 
 		for(int i = 1; i <= storedPups; i++){
 			bg.setColor(Color.white);
 			bg.setFont(new Font("Courier", Font.BOLD, 30));
@@ -314,13 +312,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.fill(new Rectangle2D.Double(p.pupRect.getX() - margin, p.pupRect.getY() - margin, 
 						p.pupRect.getWidth() + margin*2, p.pupRect.getHeight() + margin*2)); //draws border
 						
-			if(mousePos != null && p.pupRect.contains(mousePos)){
+			if(mousePos != null && p.pupRect.contains(mousePos)){ //draw powerup hover text
 				bg.setColor(colors[2]);
+				bg.setFont(gameFont);
 				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), p.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 				
 				bg.drawString(p.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));	
 				
-			} //draw powerup hover text
+			}
 		
 		} //action bar number and border
 		pups.forEach( pup -> pup.paint(bg) ); //draw all powerups
@@ -353,6 +352,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				bg.drawString("S", (float)(settings.x + (settings.width - bg.getFontMetrics().stringWidth("S"))/2), (float)( settings.y + settings.height - 10 ));
 			}
 		} //Draw paused message and settings icon
+		
 		if(gameOver){
 			bg.clearRect(0,0,screenWidth,screenHeight);
 			bg.setColor(Color.red);
@@ -364,9 +364,12 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setColor(Color.black);
 			bg.fill(bottomBar);
 			bg.setColor(colors[2]); //gold
-			bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
-			bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
-			bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
+			bg.setFont(new Font("Apple Chancery", Font.PLAIN, 43));
+			String finalScore = "Final Score: " + (int)(Math.round(score / (1 + getAvgSpeed()/200)/10)*10) + " x " + (200+getAvgSpeed())/2 + "% = " + score;
+			drawCentered(finalScore, screenHeight - (int)(bottomBar.getHeight()/2));
+			bg.setFont(gameFont.deriveFont(22f));
+			bg.setColor(Color.white);
+			drawCentered("( # of Bricks x 10 x (100 + Avg Speed/2)% )", screenHeight - 10);
 			
 			if(settingsIcon != null) //draw settings icon from image if exists
 				bg.drawImage(settingsIcon, (int)settings.icon.getX(), (int)settings.icon.getY(), (int)settings.icon.getWidth(), (int)settings.icon.getHeight(), this);
@@ -383,7 +386,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			bg.setFont(gameFont.deriveFont(27f));
 			bg.setColor(Color.white);
 			bg.drawString(" FPS:" + fps +  " GT:" + getTime() +  " Speed:" + //Display FPS, GameTime, and Speed of paddle/ball
-							settings.speedSlider.getValue(), 0, (int)bottomBar.getY() - 5);
+							(getAutoMove() ? settings.speedSlider.getValue() : 0), 0, (int)bottomBar.getY() - 5);
 			
 			if(paddle.hasBallStuck) //show the "launch the ball" text
 				drawCentered("Press " + getActionKeyBind("Action") + " to launch the ball!", (int)(paddle.thisPaddle.getY() - 50));
@@ -392,6 +395,15 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			if(mousePos != null) //display mouse position
 				bg.drawString("(" + (int)(mousePos.getX()*gameScale) + ", " + (int)(mousePos.getY()*gameScale) + ")", 
 								5, (int)bottomBar.getY() - 30);
+								
+			bg.drawString("Avg Speed: " + getAvgSpeed(), 250, (int)bottomBar.getY() - 30); //display the average speed
+			
+			if(mousePos != null && scoreRect.contains(mousePos)){ //draw Score Info Text when hovering over score
+				bg.setColor(Color.white);
+				bg.setFont(new Font("Apple Chancery", Font.PLAIN, 30));
+				int centerX = getCenterForMaxFont((int)(bottomBar.getHeight() * .6), "Tip: Base Score increases with Average Speed", getFontSize(bg));
+				bg.drawString("Tip: Base Score increases with Average Speed", centerX, (float)(screenHeight - 15));	
+			}
 		} //display the "Show Details
 		
 		Graphics2D g = (Graphics2D) gg;
@@ -399,7 +411,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	}
 
 	//Game Setup Methods
-	public void initializeKeyBindings(){
+	public void initializeKeyBindings(){ //Create the initial keybindings and actions. May be overridden by Saved Settings
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
 		
@@ -432,10 +444,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		//regular actions
 		actions.put("Stop Paddle", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){	
-				paddle.keyPressed = false;
-				if(!paddle.autoMove)
+				paddle.keyPressed = false; //let the paddle know it no longer needs to disable wall bounces
+				if(!paddle.autoMove) //it not automoving, set speed back to 0 on release
 					paddle.vx = 0;
-				else if (paddle.collidingLeftEdge())
+				else if (paddle.collidingLeftEdge()) //if automoving, make paddle go in opposite direction at the wall
 					paddle.vx = paddleVX;
 				else if(paddle.collidingRightEdge())
 					paddle.vx = -paddleVX;
@@ -444,26 +456,26 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		actions.put("Move Left", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				if(!paused){
-					paddle.keyPressed = true;
+					paddle.keyPressed = true; //created this boolean to prevent paddle from bouncing on the wall
 					paddle.vx = -1 * paddleVX;
 				}
 			}
 		});
-		actions.put("Move Right", new AbstractAction(){
+		actions.put("Move Right", new AbstractAction(){ //moves the paddle to the right
 			public void actionPerformed(ActionEvent e){	
 				if(!paused){
-					paddle.keyPressed = true;
+					paddle.keyPressed = true; //created this boolean to prevent paddle from bouncing on the wall
 					paddle.vx = paddleVX;
 				}
 			}
 		});
-		actions.put("Pause", new AbstractAction(){
+		actions.put("Pause", new AbstractAction(){ //pause or unpause the game
 			public void actionPerformed(ActionEvent e){
 				paused = !paused;
 				startTime = System.currentTimeMillis();
 			}
 		});
-		actions.put("Action", new AbstractAction(){
+		actions.put("Action", new AbstractAction(){ //unpause the game, or launch a stuck ball
 			public void actionPerformed(ActionEvent e){
 				if(paused){
 					paused = false; 
@@ -479,19 +491,19 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				}
 			}
 		});
-		actions.put("Cancel PowerUp", new AbstractAction(){
+		actions.put("Cancel PowerUp", new AbstractAction(){ //deactivate the active powerup
 			public void actionPerformed(ActionEvent e){
 				if(activePup != null)
 					deactivateBuff();
 			}
 		});
-		actions.put("Replay", new AbstractAction(){
+		actions.put("Replay", new AbstractAction(){ //toggle replay boolean when game is over
 			public void actionPerformed(ActionEvent e){
 				if(gameOver)
 					replay = true;
 			}
 		});
-		actions.put("Show Details", new AbstractAction(){
+		actions.put("Show Details", new AbstractAction(){ //toggle boolean for displaying details
 			public void actionPerformed(ActionEvent e){
 				showDetails = !showDetails;
 			}
@@ -499,9 +511,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		actions.put("Activate PowerUp 1", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				if (storedPups >= 1){									
-					if(storedPups == 3)
+					if(storedPups == 3) //set powerup #3's location to powerup #2's
 						getStoredPup(3).setRect(getStoredPup(2));
-					if(storedPups >= 2)
+					if(storedPups >= 2) //set powerup #2's location to powerup #1's
 						getStoredPup(2).setRect(getStoredPup(1));
 				
 					activateBuff( getStoredPup(1) );
@@ -511,16 +523,16 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		actions.put("Activate PowerUp 2", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
 				if (storedPups >= 2){
-					if(storedPups == 3)
+					if(storedPups == 3) //set powerup #3's location to powerup #2's
 						getStoredPup(3).setRect(getStoredPup(2));
 				
-					activateBuff( getStoredPup(2) );					
+					activateBuff( getStoredPup(2) ); //activate #2					
 				}
 			}
 		});	
 		actions.put("Activate PowerUp 3", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if (storedPups >= 3)
+				if (storedPups >= 3) //only activate if we have 3 or more powerups
 					activateBuff( getStoredPup(3) );
 			}
 		});	
@@ -528,7 +540,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		//cheat actions
 		actions.put("Paddle Speed ↑ / Ball Angle", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if(paddle.hasBallStuck){
+				if(paddle.hasBallStuck){ //stuck ball angle moves to the left
 					for( Ball ball : balls ){
 						if(ball.stuck){
 							if (ball.ratio > 0.0)
@@ -540,13 +552,13 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						}
 					}
 				}
-				else if(paddleVX < 10)
+				else if(paddleVX < 10) //increase speed but not past maximum speed
 					settings.speedSlider.setValue((int)(paddleVX * 10) + 5);
 			}
 		});
 		actions.put("Paddle Speed ↓ / Ball Angle", new AbstractAction(){
 			public void actionPerformed(ActionEvent e){
-				if(paddle.hasBallStuck){
+				if(paddle.hasBallStuck){ //stuck ball angle moves to the right
 					for( Ball ball : balls ){
 						if(ball.stuck){
 							if (ball.ratio < 1.0)
@@ -558,47 +570,47 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						}
 					}
 				}
-				else if(paddleVX > 3.5)
+				else if(paddleVX > 3.5) //decrease speed but not past 3.5
 					settings.speedSlider.setValue((int)(paddleVX * 10) - 5);
 			}
 		});
 		actions.put("Toggle Paddle AutoMove", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){			
-				//setAutoMove( !paddle.autoMove );
+			public void actionPerformed(ActionEvent e){			 //click the automove button in settings
 				settings.autoMove.doClick();
 			}
 		});	
-		actions.put("Spawn Balls", new AbstractAction(){
-			public void actionPerformed(ActionEvent e){
+		actions.put("Spawn Balls", new AbstractAction(){ //launch a ball from the paddle at the same speed of the existing ball
+			public void actionPerformed(ActionEvent e){ 
 				Ball newBall = new Ball(ballsize/2, paddle.x, paddle.y - paddle.height);
 				newBall.vy = -Math.hypot(balls.get(0).vx, balls.get(0).vy);
 				newBall.vx = 0;
 				balls.add(newBall);
 			}
 		});
-		actions.put("Spawn PowerUp", new AbstractAction(){
+		actions.put("Spawn PowerUp", new AbstractAction(){ //spawns a random powerup at center screen
 			public void actionPerformed(ActionEvent e){
 				//loseALife(balls.get(0));
 				//changeLevel();
 				pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
+				//pups.add(new PowerUp(paddle.x, paddle.y, PowerUp.Type.randomType()));
 				timeSinceLastBuff = 0;
 
 			}
 		});		
-	}	//Create the initial keybindings and actions. May be overridden by Saved Settings
-	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){
+	}	
+	public boolean updateKeyBind(KeyStroke oldKey, KeyStroke newKey){ //method used by Settings to replace keybindings
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		KeyStroke oldKeyModded = KeyStroke.getKeyStroke(oldKey.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK);
-		
+		//using a Ctrl+Shift mod to notify the table that there is a duplicate keystroke in the inputmap
 		try{
 			if( inputs.get(oldKey) != null ){
-				inputs.put(newKey, inputs.get(oldKey));
+				inputs.put(newKey, inputs.get(oldKey)); //add new key with action of old key
 				
-				if(inputs.get(oldKeyModded) != null){
+				if(inputs.get(oldKeyModded) != null){ //if the oldKey's modded version exists, remove the mods
 					inputs.put(oldKey, inputs.get(oldKeyModded));
 					inputs.remove(oldKeyModded);
 					settings.setUpControlList(); //update control list
-				}else
+				}else //if the oldkeys modded version isnt in the table then remove oldkey
 					inputs.remove(oldKey);
 				
 				return true;
@@ -606,8 +618,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		}catch(NullPointerException e) { System.out.println("That key does not exist in the Input Map"); }
 		
 		return false; //let the table know not to update because inputmap didnt change
-	} //method used by Settings to replace keybindings
-	public void toggleCheatBindings(boolean active){
+	} 
+	public void toggleCheatBindings(boolean active){ //remove cheat bindings and save them, or add them to inputmap
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		cheatsActive = active;
 		
@@ -628,8 +640,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					inputs.put(KeyStroke.getKeyStroke(k.getKeyCode(), InputEvent.CTRL_DOWN_MASK + InputEvent.SHIFT_DOWN_MASK), v);
 			});
 		}
-	} //remove cheat bindings and save them, or add them to inputmap
-	public Object[] getSavedSettings(){
+	} 
+	public Object[] getSavedSettings(){  //save the configurations of this game for future games
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		Map<KeyStroke, Object> im2 = new HashMap<KeyStroke, Object>(); 
 		for(KeyStroke key : inputs.keys()) //make a copy of all the inputs in InputMap with <key, value>
@@ -641,9 +653,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 								   Boolean.valueOf(paddle.autoMove), Boolean.valueOf(cheatsActive), Boolean.valueOf(lockedEnabled), 
 								   Boolean.valueOf(settings.dontAsk), im2, Double.valueOf(gameScale), Boolean.valueOf(showDetails) };
 		return savedSettings;
-	} //save the configurations of this game for future games
+	}
 	@SuppressWarnings("unchecked")
-	public void setSavedSettings(Object[] savedSettings){
+	public void setSavedSettings(Object[] savedSettings){ //implement the saved configurations from past games into this game
 		gameScale = (Double)savedSettings[7];
 	
 	
@@ -667,10 +679,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		settings = new Settings(this); //create a new settings window
 		settings.dontAsk = (Boolean)savedSettings[5]; //set the dont ask boolean of the new settings window
 		
-	} //implement the saved configurations from past games into this game
+		prevGameTime = 1; //setDifficulty and setAutoMove will set this to 0 and we dont want to divide by zero
+	} 
 	
 	//high scores methods
-	public void createAndDisplayHighScores(){
+	public void createAndDisplayHighScores(){ //handles the creation, addition, and resizing of our High Scores Table/Title
 		InputStream highscores;
 		highscores = GUI.class.getResourceAsStream("highscores.csv");
 		
@@ -793,8 +806,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			updateHighScoresFile(hsData);			//now that the table data is correct, update the file
 		}
 		
-	} //handles the creation, addition, and resizing of our High Scores Table/Title
-	public JTable setUpTable(Object[][] hsData, String[] headerData){
+	} 
+	public JTable setUpTable(Object[][] hsData, String[] headerData){ //Creates a custom table of high scores from given data
 		JTable table = new JTable(hsData, headerData){
 			@Override
 			public boolean isCellEditable(int row, int col){ //no cells are editable
@@ -826,8 +839,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		resizeTableCols(table); //resize table columns for current font size
 		
 		return table;
-	} //Creates a custom table of high scores from given data
-	public void resizeTableCols(JTable table){
+	} 
+	public void resizeTableCols(JTable table){ //auto-sizes columns/table by largest column widths
 		TableColumnModel model = table.getColumnModel();
 		JTableHeader header = table.getTableHeader();
 		FontMetrics tableFM = table.getFontMetrics(table.getFont());
@@ -847,7 +860,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
  			width = Math.max(headerWidth + 1 , width);
 		
 			model.getColumn(col).setPreferredWidth(width + 10);
-			if( col == 1 || col > 3) {
+			if( col != 0 && col != 3) {
 				model.getColumn(col).setCellRenderer(new DefaultTableCellRenderer(){
 					@Override
 					public Color getBackground(){
@@ -860,8 +873,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		model.setColumnMargin(5);
 		table.setRowHeight(tableFM.getHeight() + 5);	
-	} //auto-sizes columns/table by largest column widths
-	public void newHighScore(Object[][] hsData){
+	} 
+	public void newHighScore(Object[][] hsData){ //Replaces the last high score with the new one and sorts it
 		//Data for the new highscore. Name to be entered after to account for tableWidth changes
 		Object newHS[] = { "...", Integer.valueOf(score), Integer.valueOf(level), getTime(), 
 							Double.valueOf(getAvgSpeed()), toggledLockedOff ? "No" : "Yes" };
@@ -869,8 +882,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			hsData[6][i] = newHS[i]; //replace the last row
 		
 		Arrays.sort(hsData, (a, b) -> Integer.compare((Integer)(b[1]), (Integer)(a[1]))); //sort the table be score (decreasing)
-	}	//Replaces the last high score with the new one and sorts it
-	public boolean isHighScoreNameValid(String name, int availableWidth){
+	}	
+	public boolean isHighScoreNameValid(String name, int availableWidth){//returns true if a valid name
 		
 		if(name == null || name.isEmpty() || !name.matches( "(\\w[\\w\\s]*\\w)|\\w"))
 			return false; //regex states either a single letter or multiple letters/nums/spaces that begin and end in a letter
@@ -882,8 +895,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			return false;
 	
 		return true;
-	} //returns true if a valid name
-	public void updateHighScoresFile(Object[][] hsData){	
+	} 
+	public void updateHighScoresFile(Object[][] hsData){ //Creates/Overwrites the highscores file 	
 		try(FileWriter f = new FileWriter("highscores.csv"); 
 			BufferedWriter b = new BufferedWriter(f); PrintWriter p = new PrintWriter(b);) {
 			
@@ -901,10 +914,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			p.close();
 				
 		} catch(IOException ex) {System.out.println("Couldn't Create New HighScores File");}	
-	} //Creates/Overwrites the highscores file
+	} 
 	
 	//utility methods
-	public String getTime(){
+	public String getTime(){ //Return a String Representation of Game Timer 
 		int minutes = (int)(gameTimer/6000);
 		int seconds = (int)(gameTimer % 6000) /100 ;
 		int milliseconds = (int)(gameTimer % 100);
@@ -913,31 +926,37 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			ms = "0" + milliseconds;
 		
 		return minutes + ":" + seconds + ":" + ms;
-	} //Return a String Representation of Game Timer
-	public void drawCentered(String str, int y){
+	} 
+	public void drawCentered(String str, int y){ //calculates the X value required for centered text and draws it 
 		int centerX = (screenWidth - bg.getFontMetrics().stringWidth(str))/2;
 		bg.drawString(str, centerX, y);
-	} //calculates the X value required for centered text and draws it
-	public int getCenterForMaxFont(int height, String str, int fontsize){
-		bg.setFont(gameFont.deriveFont((float)fontsize));
-		FontMetrics metrics = bg.getFontMetrics();
-		int centerX = (screenWidth - metrics.stringWidth(str)) / 2;
+	} 
+	public int getCenterForMaxFont(int height, String str, int fontsize){ //recursively calculates max fontsize and returns the X value to draw the string
 		
-		if(screenWidth < metrics.stringWidth(str) || metrics.getHeight() > height){
+		bg.setFont(bg.getFont().deriveFont((float)fontsize)); //set font to given fontsize
+		FontMetrics metrics = bg.getFontMetrics();
+		FontMetrics metBigger = getFontMetrics(bg.getFont().deriveFont((float)fontsize + 1)); //metrics of the bigger font
+		
+		int strWidth = metrics.stringWidth(str);
+		int centerX = (screenWidth - strWidth) / 2;	//calculate the centerX needed for the string at that font
+		
+		if(centerX < 5 || metrics.getHeight() > height){	 //if font is too big, shrink it by 1 and try again
 			centerX = getCenterForMaxFont(height, str, fontsize - 1);
 		}
-		else if(screenWidth - metrics.stringWidth(str) > screenWidth * .1){
+		else if( metBigger.stringWidth(str) < screenWidth + 5 && metBigger.getHeight() < height){ 
+		//only make it bigger if the bigger font fits the restrictions
 			centerX = getCenterForMaxFont(height, str, fontsize + 1);
 		}
 		
+		//only after finding just the right size that fits, do we return back to the first call
 		return centerX;
 		
-	} //recursively calculates max fontsize and returns the X value to draw the string
-	public int getFontSize(Graphics2D b){
+	} 
+	public int getFontSize(Graphics2D b){ //helper method to get current fontsize
 		return b.getFont().getSize();
-	} //helper method to get current fontsize
-	public Color glowingColor(Color c){
-		int glowSpeed = 5;
+	} 
+	public Color glowingColor(Color c){ //dynamically adjust the color's alpha to appear as though it's glowing
+		int glowSpeed = 5;		//changing the glowspeed changes how fast it flashes
 		int max = 256 * 2 / glowSpeed;
 		int alpha = (int)gameTimer % max; //0-255 when gameScale = 2
 		
@@ -952,59 +971,34 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		bg.fill(activePup.pupRect);
 		
 		if((buffTimer - gameTimer)/100 < 5 ){ bg.setColor(glowingColor(Color.black)); }
-		else{ bg.setColor(Color.black);}
+		else{ bg.setColor(Color.black);} //Active Powerup Initials
 		bg.setFont(new Font("Courier", Font.BOLD, 30));
 		bg.drawString(activePup.initials, (int)(activePup.x - activePup.width/2 + 2), (int)(activePup.y + activePup.height*.2));
 	}
-	public String getActionKeyBind(String action){
+	public String getActionKeyBind(String action){  //returns the name of the key for the given action
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
-		KeyStroke key = KeyStroke.getKeyStroke('a');
+		KeyStroke key = KeyStroke.getKeyStroke('a'); //need to initialize with a default value
 		for(KeyStroke k : inputs.keys()){
-			if(inputs.get(k).equals(action)){
+			if(inputs.get(k).equals(action)){ //get the keystroke for the given action
 				key = k;
 				break;
 			}	
 		}
 		String keyName = KeyEvent.getKeyText(key.getKeyCode()); //Get the KeyText of our KeyStroke
+		//adjust keyName for certain symbols
 		if (keyName.equals("␣")) { keyName = "Spacebar"; }
 		if (keyName.equals("⇥")) { keyName = "Tab"; }
 		if (keyName.equals("⇪")) { keyName = "CAPS"; }
 		
 		return keyName;
 	}
-	public KeyStroke getKeyBind(String action){
-		for(KeyStroke k : getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).keys()){
-			if(getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW).get(k).equals(action)){
-				return k;
-			}	
-		}
-		
-		System.out.println("Action not found. Returning null.");
-		return null;
+	public void updateInstantAvgSpeed(){
+		double speed = getAutoMove() ? paddleVX * 10 : 0;
+		totalSpeed += (speed * (gameTimer - prevGameTime));
+		prevGameTime = gameTimer;
 	}
-	public void addSpeedInfo(){
-		double totalTime = speedInfo.stream().mapToDouble(Tuple::getT).sum();
-		
-		double time = gameTimer - totalTime;
-		int speed = !paddle.autoMove ? 0 : (int)(paddleVX * 10);
-	
-		if(time != 0)
-			speedInfo.add(new Tuple(speed, time));
-		
-		// getAvgSpeed();
-// 		System.out.println();
-	}
-	public double getAvgSpeed(){
-		//System.out.println(speedInfo);
-		double sum = 0;
-		
-		for(Tuple tup : speedInfo)
-			sum += tup.s * tup.t;
-		
-		
-		double avg = (int)((sum/gameTimer) * 10) / 10.0;
-		//System.out.println("" + sum + " / " + gameTimer + " = " + avg);
-		return avg;
+	public double getAvgSpeed(){ //return the average speed calculated by the sum of all (speed * prevTime) divided by last prevTime
+		return (int)(totalSpeed/prevGameTime * 10) / 10.0; //return average with one decimal point (*10 / 10.0)
 	}
 	
 	//game methods
@@ -1013,135 +1007,110 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		exposedBricks.clear();
 		numLocked = 0;
 		for(int i = 0; i < rows; i++){
-			bricks.add(new ArrayList<Brick> ());
-			int brickType = rows - i - 1;
+			bricks.add( new ArrayList<Brick>() ); //the famous arraylist of arraylists<brick>
+			int brickType = rows - i - 1; //guarantee that bottom row is brickType = 0 (red)
 			
-			for(int j = 0; j < cols; j++){
-				double w = (screenWidth - (cols + 1)*margin)/ (double)cols;
-				Brick temp = new Brick(brickType, w, i, j, margin);
-				temp.setColor(colors[brickType]);
+			for(int j = 0; j < cols; j++){ //populate bricks into our row arraylist
+				double w = (screenWidth - (cols + 1)*margin)/ (double)cols; //brick width determined by number or bricks & margin size
+				Brick temp = new Brick(brickType, w, i, j, margin); //create a brick object to be added to list. Give it type, width, row, col, and margin.
+				temp.setColor(colors[brickType]); //change color of the brick to match brickType. 0 = red...6 = purple
 				
-				int rollLocked = roll.nextInt(50 - brickType*3);
-				if(rollLocked == 0 && lockedEnabled){ 
-					temp.locked = true; 
-					temp.setColor(Color.gray);
-					numLocked++;
+				int rollLocked = roll.nextInt(50 - brickType*3); //random chance to lock a brick. Higher chance for higher rows
+				if(rollLocked == 0 && lockedEnabled){ //1/50 chance for red bricks, up to 1/32 for purple. (7/50 and 7/32 effective chance per row)
+					temp.locked = true; //lock the brick
+					temp.setColor(Color.gray); //set to gray
+					numLocked++; //track number of locked bricks to subtract from exposed bricks count later
 				}
 				
-				if( i == rows-1 ){
-					exposedBricks.add(temp);
-					bricks.get(i).add(temp);
-				}
-				else
-					bricks.get(i).add(temp);
+				if( i == rows - 1 ){ exposedBricks.add(temp); } //at the start, only bottom row is exposed
+				bricks.get(i).add(temp); //finally, add brick to row
 			}
 		}
-		return bricks.get(0).get(0).height; //used to draw black rect behind bricks
+		return bricks.get(0).get(0).height; //return brickheight - used to draw black border behind bricks
 	}
-	public void loseALife(Ball ball){
+	public void loseALife(Ball ball){ //triggered when a ball falls past the paddle. Respawn new ball or End Game if last ball
 		balls.remove(ball);
 		
-		if(balls.size() == 0){
+		if(balls.size() == 0){ //last ball got removed
 			paused = true;
 			lives--;
-			pups.removeIf( p -> (p.vy != 0));
+			pups.removeIf( p -> (p.vy != 0)); //remove any non-stored/moving powerups
 			
-			if( lives >= 0 ){
-				balls.add(new Ball(ballsize/2));
+			if( lives >= 0 ){ //Lives left
+				balls.add(new Ball(ballsize/2)); //create a new ball in default location
 				
-				if(activePup != null)
+				if(activePup != null) //deactivate the active powerup if you lose a life
 					deactivateBuff();
-				paddle = new Paddle(paddle.autoMove, paddle.paddleColor);
-				setDifficulty((double)settings.speedSlider.getValue());
-				//paddle.vx = -1 * Math.abs(paddle.vx);
+				paddle.setX(screenWidth/2); //move paddle back to start location
+				paddle.vx = paddle.autoMove ? -paddleVX : 0; //make sure we are going left at start
+				setDifficulty((double)settings.speedSlider.getValue()); //set paddle/ball speed;
 			}
-			else{
+			else{ //no lives left
 				gameOver = true;
 				if(!cheatsActive) { //if false make inputmap include cheats for new game then set back to false 
 					toggleCheatBindings(true); 
 					cheatsActive = false;
 				}
-				addSpeedInfo();
+				updateInstantAvgSpeed(); //update the average speed one last time
 			}
 		}
 	}
-	public void addNewExposedBrick(Brick b){
+	public void addNewExposedBrick(Brick b){ //adds active brick to exposedBricks if not already added
 		if(!exposedBricks.contains(b) && b.active == true)
-			exposedBricks.add(b);
-		
-	} //adds active brick to exposedBricks if not already added
+			exposedBricks.add(b); //the brick can now be hit by a ball
+	} 
 	public void removeExposedBrick(Brick b){
 		//set all bricks around the hit brick to the appropriate exposures
 		//add those bricks to exposedBricks if they aren't already added
 		//remove hit brick from list
-		int r = b.row, c = b.col;
 		
-		if(r != 0){ //sets brick above hit-brick. protects from index out of bounds error here
-			bricks.get(r-1).get(c).exposedSide[2] = true; //bottom is exposed
-			addNewExposedBrick(bricks.get(r-1).get(c));
+		int r = b.row, c = b.col; //row and column of hit brick
+		
+		if(r != 0){ //sets exposure for above brick. All If Statements put in place to protect from IndexOutOfBounds errors
+			bricks.get(r-1).get(c).exposedSide[2] = true; //bottom of top brick is exposed
+			addNewExposedBrick(bricks.get(r-1).get(c)); 
 		}
 		if(r + 1 != rows){ //brick below
-			bricks.get(r+1).get(c).exposedSide[0] = true; //top is exposed
-			addNewExposedBrick(bricks.get(r+1).get(c));
+			bricks.get(r+1).get(c).exposedSide[0] = true; //top of bottom brick is exposed
+			addNewExposedBrick(bricks.get(r+1).get(c)); 
 		}
 		if(c != 0){ //brick to the left
-			bricks.get(r).get(c-1).exposedSide[1] = true; //right is exposed
+			bricks.get(r).get(c-1).exposedSide[1] = true; //right side of left brick is exposed
 			addNewExposedBrick(bricks.get(r).get(c-1));
 		}
 		if(c + 1 != cols){ //brick to the right
-			bricks.get(r).get(c+1).exposedSide[3] = true; //left is exposed
+			bricks.get(r).get(c+1).exposedSide[3] = true; //left side of right brick is exposed
 			addNewExposedBrick(bricks.get(r).get(c+1));
 		}
 	
-		exposedBricks.remove(b);
+		exposedBricks.remove(b); //remove hit brick from exposed brick
 				
-		if(exposedBricks.size() == 0)
+		if(numLocked == exposedBricks.size()) //change level if the only exposed bricks left are locked
 			changeLevel();
-		for( int i = 0; i < exposedBricks.size(); i++){ //if there are no non-locked bricks left, change level
-			if(!exposedBricks.get(i).locked)
-				break;
-			else if(i == exposedBricks.size() - 1)
-				changeLevel();
-		}
-		
 	}
-	public void changeLevel(){
+	public void changeLevel(){ //handles the changing of one level to the next
 		paused = true;
 		balls.clear();
 		balls.add(new Ball(ballsize/2));
-		paddle.setX(screenWidth/2);
-		paddle.vx = -paddleVX;
-		setDifficulty((double)settings.speedSlider.getValue());
+		paddle.setX(screenWidth/2); //move paddle back to start location
+		paddle.vx = paddle.autoMove ? -paddleVX : 0; //make sure we are going left at start //make sure we are going left at start
+		setDifficulty((double)settings.speedSlider.getValue()); //set paddle/ball speed 
 		level++;
-		if(lives < 3)
-			lives = 3;
-		changeBackground();
-		timeSinceLastBuff = 0;
+		lives = (lives < 3) ? 3 : lives;  //set lives back to 3 if under 3
+		setBackground((level % 6) + 1); //change background for new level. Images are numbered 1-6.
+		timeSinceLastBuff = 0; //reset timer for last spawned powerup		
 		
-		if(rows == 7)
+		if(rows == 7) //once we've hit the max number of rows, start adding columns
 			cols++;
-		else
+		else	//levels 1-6 we just keep adding more rows to complete the rainbow
 			rows++;
-		populateBricks();
+		populateBricks(); //respawn all bricks
 		repaint();
-		revalidate();
+		//revalidate();
 	}
-	public void changeBackground(){
-		if( bgIndex > 5 )
-			bgIndex = 1;
-		
-		bgIndex++;
-		try{ 
-			background = ImageIO.read(GUI.class.getResourceAsStream("images/BG" + bgIndex + ".jpg")); 
-		}
-		catch(IOException e){ System.out.println("File Not Found"); }
-	}
-	public void setBackground (int i){
+	public void setBackground (int i){ //changes the background of our game to an index of our choosing
 		int index = (i > 6) ? 1 : i ;
-		// if( i > 6 )
-// 			index = 1;
-// 		else
-// 			index = i;
+		
 		try{ 
 			background = ImageIO.read(GUI.class.getResourceAsStream("images/BG" + index + ".jpg")); 
 		}
@@ -1150,7 +1119,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void rollBuff(Brick b){
 		//the longer the timeSinceLastBuff, the more likely to get one.
 		//base chance of getting a bonus is 10%
-		//Every 15 seconds without a buff, adds 11% up to a max of 98%
+		//Every 15 seconds without a buff, adds 11% up to a max of 98% after 2 minutes
 		//average timeSinceLastBuff in 15 seconds = 1850
 		
 		int theRoll = roll.nextInt(100) + 1;
@@ -1164,65 +1133,63 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		}
 		
 	}
-	public PowerUp getStoredPup(int n){
+	public PowerUp getStoredPup(int n){ //gets the powerup stored in location 1 2 or 3
 		int c = 1; //stored pup counter
 		
 		for( PowerUp p : pups){
 			if(p.stored){
-				if(c == n)
+				if(c == n) //if stored pup number matches given number, return that powerup
 					return p;
 				else
-					c++;
+					c++; //increase number of stored pups we found
 			}
 		}
+		
 		return null;
 	}
 	public void activateBuff(PowerUp pup){
-		if(activePup != null && pup.type != PowerUp.Type.EXTRA_LIFE)
+		if(activePup != null && pup.type != PowerUp.Type.EXTRA_LIFE) //dont deactivate the active pup if activating an extra life
 			deactivateBuff();
 		
 		if(pup.type != PowerUp.Type.EXTRA_LIFE){
-			pup.activate();
-			activePup = pup;
-			storedPups--;
+			pup.activate(); //set active and set !stored. Change location to active location
+			activePup = pup; //the new active powerup is this one
+			storedPups--; //no longer stored
 			buffTimer = gameTimer + 1600; //1 gameTimer = 1/100th of a second. so 1600 - 100 = 15 seconds
 		}
 		
 		switch (pup.type){
-			case BIG_BALL:
+			case BIG_BALL: //double the size of all balls
 				balls.forEach(ball -> {
 					ball.rad = ballsize;
 					if(ball.y < screenHeight/2){ ball.y += ballsize; }
 					ball.resetFrame();
 				});
 			break;
-			case BIG_PADDLE:
+			case BIG_PADDLE: //double paddle width
 				paddle.setWidth(paddle.width*2);
 			break;
-			case MULT_BALLS:
-				Ball original = balls.get(0);
+			case MULT_BALLS: //spawn as many balls as ballMultiplier says
+				Ball original = balls.get(0); 
 				for(int i = 0; i < ballMultiplier; i++){
 					if(i == 0)
-						balls.set(0, new Ball(original, i, ballMultiplier));
+						balls.set(0, new Ball(original, i, ballMultiplier)); //replace original ball with first ball in the set
 					else
 						balls.add(new Ball(original, i, ballMultiplier));
 				}
-	
 			break;
-			case STICKY_PADDLE:
+			case STICKY_PADDLE: //activate sticky paddle
 				paddle.sticky = true;
 			break;
-			case EXTRA_LIFE:
+			case EXTRA_LIFE: //give an extra life and remove from stored powerups
 				lives++;
 				storedPups--;
 				pups.remove(pup);
 			break;			
-			case POWER_BALL:
-				buffTimer += 1500;
+			case POWER_BALL: //spawns 
 				Ball newBall = new Ball(ballsize * .75, paddle.x, paddle.y - paddle.height/2 - ballsize * .75, true);
-				newBall.vy = -Math.hypot(newBall.vx, newBall.vy) / 2 ;
+				newBall.vy = -Math.hypot(newBall.vx, newBall.vy) / 2 ;  //shoot straight up
 				newBall.vx = 0;
-				newBall.power = true;
 				balls.add(newBall);
 				deactivateBuff();
 			break;
@@ -1258,7 +1225,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	
 	//settings toggle methods
 	public void setDifficulty(double newSpeed){
-		addSpeedInfo();
+		updateInstantAvgSpeed();
 		if(paddle.autoMove)
 			paddle.vx = Math.signum(paddle.vx) * newSpeed / 10.0;
 		
@@ -1276,7 +1243,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	}
 	public boolean getAutoMove(){ return paddle.autoMove; }
 	public void setAutoMove(boolean b){
-		addSpeedInfo();
+		updateInstantAvgSpeed();
 		paddle.autoMove = b; 
 		paddle.vx = (b == true) ? -paddleVX : 0;
 	}
@@ -1365,20 +1332,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseMoved(MouseEvent e){
 		mousePos = e.getPoint();
 		mousePos.setLocation(e.getX() * 1/gameScale, e.getY() * 1/gameScale);
-	}
-}
-
-class Tuple{
-	public final int s;
-	public final double t;
-	
-	public Tuple(int s, double t){
-		this.s = s;
-		this.t = t;
-	}
-	public double getT(){return t;}
-	public String toString(){
-		return "(" + s + ", " + t + ")\n";
 	}
 }
 
@@ -1587,7 +1540,7 @@ class Brick{
 			exposedSide[1] = true;
 	}
 	
-	public void deactivate(){
+	public void deactivate(){ //exposed side determines how we shift/grow our brick to cover margins and not leave floating borders
 		active = false;
 		
 		if(exposedSide[0]){ //top
