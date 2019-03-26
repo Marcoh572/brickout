@@ -19,13 +19,11 @@ public class brickout {
 	static final int FPS = 100;
 	static final int timeStep = 1000/FPS;
 	static final int ScreenWidth = 1000, ScreenHeight = 1000;
+	JFrame frame = new JFrame("BrickOut - By: Marco");
+	GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
+	SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
 	
-	public static void main(String[] args){	
-		boolean showSplash = true;
-		JFrame frame = new JFrame("BrickOut - By: Marco");
-		GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
-		SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
-		
+	public brickout(){
 		frame.addComponentListener(new ComponentAdapter(){ //deal with resizing of the window
 			@Override
 			public void componentResized(ComponentEvent e){						
@@ -38,42 +36,64 @@ public class brickout {
 		frame.pack();
 		frame.setVisible(true);
 		
-		while (true){ //master loop
-			try{
-				if(showSplash){ //Splash Loop
+		runGame();
+	}
+	
+	public static void main(String[] args){			
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run() {
+				new brickout();
+			}
+		});
+	}
+	
+	public void runGame() {
+		Thread loop = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				while(splash.isShowing()){  //Splash Loop
 					if(!splash.showing()){ //replace splash with gui
 						frame.remove(splash);
 						frame.add(gui, BorderLayout.CENTER);
 						frame.pack();
-						showSplash = false;
 					}
+				
+					try { Thread.sleep(timeStep * 50); }
+					catch (InterruptedException e) {}
 				}
-				else{ //Game Loop		
-					if(gui.replay){ //get saved settings and create new game from those settings
-						Object[] savedSettings = gui.getSavedSettings();
-						gui.settings.frame.dispose();
-						frame.remove(gui);
-						gui = new GUI(ScreenWidth, ScreenHeight, savedSettings);
-						frame.add(gui, BorderLayout.CENTER);
-						frame.pack();
-					}
+				
+				while(true){ //Game Loop		
+					if(gui.gameOver && gui.replay) 
+						createNewGame();
 					
-					while(gui.gameOver == false){ //active game loop
-						try{
-							gui.move();
-							gui.repaint();
-							Thread.sleep(timeStep); 
-						} catch (InterruptedException e) { }
+					if(gui.gameOver == false){ //active game loop
+						gui.gameLoop();
+						
 						if(gui.gameOver){
 							gui.createAndDisplayHighScores();
 							gui.revalidate();	
 						}
 					}
+					
+					try { Thread.sleep(timeStep * 50); }
+					catch (InterruptedException e) {}
 				}
-				Thread.sleep(timeStep * 50);
-			} catch (InterruptedException e) { }
-		}
+			}
+		});
+		loop.start();
+
 	}
+	
+	public void createNewGame(){ //get saved settings and create new game from those settings
+		Object[] savedSettings = gui.getSavedSettings();
+		gui.settings.frame.dispose();
+		frame.remove(gui);
+		gui = new GUI(ScreenWidth, ScreenHeight, savedSettings);
+		frame.add(gui, BorderLayout.CENTER);
+		frame.pack();
+	}
+
 }
 	
 class GUI extends JPanel implements MouseListener, MouseMotionListener {
@@ -261,7 +281,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	@Override
 	public void paintComponent(Graphics gg){
 		frames++; //increase the number of frames drawn every time we repaint
-		if(System.currentTimeMillis() - fpsTimer >= 1000){ //Track Live Frames per Second
+		if(System.currentTimeMillis() - fpsTimer >= 1000){  //Track Live Frames per Second
 			fps = frames;
 			frames = 0;
 			fpsTimer = System.currentTimeMillis();
@@ -362,6 +382,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			} //Draw paused message and settings icon
 		}
 		else{ //game over
+			bg.setColor(Color.red);
 			bg.setFont(gameFont.deriveFont(Font.BOLD, 120));
 			drawCentered("GAME OVER", (int)(screenHeight * .25) );
 			bg.setFont(gameFont);
@@ -413,6 +434,16 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		
 		Graphics2D g = (Graphics2D) gg;
 		g.drawImage(buffer, null, 0, 0);
+	}
+
+	public void gameLoop(){
+		while(!gameOver){
+			if(!paused){
+				move();
+				repaint();
+			}
+			try{ Thread.sleep(brickout.timeStep); } catch (InterruptedException e) {}
+		}
 	}
 
 	//Game Setup Methods
@@ -1254,7 +1285,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				ball.vy = -dist * Math.sin(Math.toRadians(theta)); //same with vy
 			}
 		}catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
-
 	}
 	public boolean getAutoMove(){ return paddle.autoMove; }
 	public void setAutoMove(boolean b){ //set if the paddle is automoving
@@ -1346,6 +1376,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	public void mouseMoved(MouseEvent e){ //get mouse location
 		mousePos = e.getPoint();
 		mousePos.setLocation(e.getX() * 1/gameScale, e.getY() * 1/gameScale);
+		
+		if(paused)
+			repaint();
 	}
 }
 
@@ -2141,11 +2174,13 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{ //
 			colorLabel.setText("" + source.getValue() /10);
 			paddleColor = Color.getHSBColor(value, 1.0f, 1.0f);
 			gui.paddle.paddleColor = paddleColor; //Update paddle color
+			gui.repaint();
 			repaint();
 		}
 		else if(source.equals(speedSlider)){ //change speedSlider
 			double value = (double)source.getValue();
 			gui.setDifficulty(value); //Update paddle and ball speed
+			gui.repaint();
 		}
 	}
 	
