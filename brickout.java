@@ -107,7 +107,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	double fpsTimer, startTime, gameTimer = 0, buffTimer = 0, totalSpeed, prevGameTime = 1;
 	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = true;
 	boolean lockedEnabled = true, hsEligible = !cheatsActive, toggledLockedOff = !lockedEnabled;
-	boolean updateBar = true;
 	Settings settings;
 	Rectangle2D bottomBar, scoreRect;
 	Paddle paddle;
@@ -281,7 +280,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 
 	@Override
 	public void paintComponent(Graphics gg){
-		//Rectangle r = bg.getClipBounds();
 		if(!paused){
 			frames++; //increase the number of frames drawn every time we repaint
 			if(System.currentTimeMillis() - fpsTimer >= 1000){  //Track Live Frames per Second
@@ -291,56 +289,33 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			}
 		}
 		
-		//bg.setClip(0, 0, screenWidth, (int)bottomBar.getY());
 		bg.drawImage(background, 0, 0, screenWidth, screenHeight, this);
 		
 		if(!gameOver){
+			bg.setColor(Color.black); //draw the status (bottom) bar
+			bg.fill(bottomBar);
+			bg.setColor(colors[2]); //gold
+			bg.setFont(gameFont);
+			bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
+			bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
+			bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
+			scoreRect = new Rectangle.Double((double)(screenWidth - 250), bottomBar.getY(), 250, (double)(getFontSize(bg) + 5));
+	
+			if( lives <= 5){
+				for( int i = 0; i < lives; i++){
+					if(balls.size() > 0){ bg.setColor(balls.get(0).ballColor); }
+					bg.fill(new Ellipse2D.Double(130.0 + i*ballsize*1.5, bottomBar.getY() + (getFontSize(bg) - ballsize)/2 + 2, ballsize, ballsize));
+				}
+			}  //display player lives
+			else{
+				bg.setColor(balls.get(0).ballColor);
+				bg.fill(new Ellipse2D.Double(130.0, bottomBar.getY() + (getFontSize(bg) - ballsize)/2 + 2, ballsize, ballsize));
+				bg.setColor(colors[2]);
+				bg.drawString("x" + lives, 133 + (int)ballsize, (int)bottomBar.getY()  + getFontSize(bg));
+			} //more than 5 lives, show as a "Lives: ball x6"
 		
-			if(updateBar){
-				//bg.setClip(0, (int)paddle.thisPaddle.getY(), screenWidth, screenHeight - (int)paddle.thisPaddle.getY());
-				bg.setColor(Color.black); //draw the status (bottom) bar
-				bg.fill(bottomBar);
-				bg.setColor(colors[2]); //gold
-				bg.setFont(gameFont);
-				bg.drawString("Lives:", 10, (int)bottomBar.getY()  + getFontSize(bg));
-				bg.drawString("PowerUps: " , screenWidth/2 - 100, (int)bottomBar.getY()  + getFontSize(bg));
-				bg.drawString("Score: " + score, screenWidth - 250, (int)bottomBar.getY()  + getFontSize(bg));
-				scoreRect = new Rectangle.Double((double)(screenWidth - 250), bottomBar.getY(), 250, (double)(getFontSize(bg) + 5));
-		
-				if( lives <= 5){
-					for( int i = 0; i < lives; i++){
-						if(balls.size() > 0){ bg.setColor(balls.get(0).ballColor); }
-						bg.fill(new Ellipse2D.Double(130.0 + i*ballsize*1.5, bottomBar.getY() + (getFontSize(bg) - ballsize)/2 + 2, ballsize, ballsize));
-					}
-				}  //display player lives
-				else{
-					bg.setColor(balls.get(0).ballColor);
-					bg.fill(new Ellipse2D.Double(130.0, bottomBar.getY() + (getFontSize(bg) - ballsize)/2 + 2, ballsize, ballsize));
-					bg.setColor(colors[2]);
-					bg.drawString("x" + lives, 133 + (int)ballsize, (int)bottomBar.getY()  + getFontSize(bg));
-				} //more than 5 lives, show as a "Lives: ball x6"
 			
-				for(int i = 1; i <= storedPups; i++){
-					bg.setColor(Color.white);
-					bg.setFont(new Font("Courier", Font.BOLD, 30));
-					PowerUp p = getStoredPup(i); //gets the stored powerup at that index
-					bg.drawString("" + i, (float)(p.x - p.width * .2), (float)(p.y - p.height * .667)); //number above the stored pup
-					bg.fill(new Rectangle2D.Double(p.pupRect.getX() - margin, p.pupRect.getY() - margin, 
-								p.pupRect.getWidth() + margin*2, p.pupRect.getHeight() + margin*2)); //draws border
-					p.paint(bg);
-						
-					if(mousePos != null && p.pupRect.contains(mousePos)){ //draw powerup hover text
-						bg.setColor(colors[2]);
-						bg.setFont(gameFont);
-						int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), p.typeToString(getActionKeyBind("Action")), getFontSize(bg));
-				
-						bg.drawString(p.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));	
-					}
-		
-				} //action bar number and border
-			
-				updateBar = false;
-			}
+
 			if(activePup != null){ //draw active powerup
 				bg.setColor(glowingColor(Color.yellow)); //draw glowing border around the active powerup
 				bg.fill(new Rectangle2D.Double(activePup.pupRect.getX() - margin, activePup.pupRect.getY() - margin, 
@@ -358,8 +333,24 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 					bg.drawString(activePup.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));
 				} 
 			} 
+			for(int i = 1; i <= storedPups; i++){
+				bg.setColor(Color.white);
+				bg.setFont(new Font("Courier", Font.BOLD, 30));
+				PowerUp p = getStoredPup(i); //gets the stored powerup at that index
+				bg.drawString("" + i, (float)(p.x - p.width * .2), (float)(p.y - p.height * .667)); //number above the stored pup
+				bg.fill(new Rectangle2D.Double(p.pupRect.getX() - margin, p.pupRect.getY() - margin, 
+							p.pupRect.getWidth() + margin*2, p.pupRect.getHeight() + margin*2)); //draws border
+					
+				if(mousePos != null && p.pupRect.contains(mousePos)){ //draw powerup hover text
+					bg.setColor(colors[2]);
+					bg.setFont(gameFont);
+					int centerX = getCenterForMaxFont((int)(bottomBar.getHeight()/2), p.typeToString(getActionKeyBind("Action")), getFontSize(bg));
 			
-			pups.forEach( pup -> { if(pup.vy != 0) pup.paint(bg); } ); //draw all moving powerups
+					bg.drawString(p.typeToString(getActionKeyBind("Action")), centerX, (float)(screenHeight - 5));	
+				}
+	
+			} //action bar number and border
+			pups.forEach( pup -> { pup.paint(bg); } ); //draw all moving powerups
 			bricks.forEach( bList -> bList.forEach( brick -> {
 				if(brick.active){
 					bg.setColor(Color.black);
