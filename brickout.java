@@ -1,6 +1,20 @@
+
+/************************************************************************************
+							Brickout - By: Marco Hernandez
+							Last Updated: March 27, 2019
+
+This project's Objective was to build a game using unfamiliar libraries (swing/awt)
+to gain experience in researching through documentation and online sources.
+
+I learned topics pertaining to Swing/Awt Applications, GUI Creation, KeyBindings,
+Multi-Threading, File Management, Lambda Expressions, Anonymous Classes,
+and overall Object Oriented Techniques
+
+************************************************************************************/
+
+import java.awt.*; 
 import java.awt.image.BufferedImage;
-import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.*; 
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
@@ -9,21 +23,24 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.border.TitledBorder;
 import javax.swing.plaf.BorderUIResource;
-import javax.swing.table.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumnModel;
 import javax.imageio.ImageIO;
-import java.io.*;
 import java.io.IOException;
-import java.util.*;
+import java.util.*; 
 
 public class brickout {
 	static final int FPS = 100;
 	static final int timeStep = 1000/FPS;
 	static final int ScreenWidth = 1000, ScreenHeight = 1000;
-	JFrame frame = new JFrame("BrickOut - By: Marco");
+	
+	//global variables for frame and JComponents necessary to create new GUIs inside anonymous Runnable class
+	JFrame frame = new JFrame("BrickOut - By: Marco"); 
 	GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
 	SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
 	
-	public brickout(){
+	public brickout(){ //Constructor adds components to our window and calls the game loop
 		frame.addComponentListener(new ComponentAdapter(){ //deal with resizing of the window
 			@Override
 			public void componentResized(ComponentEvent e){						
@@ -39,21 +56,21 @@ public class brickout {
 		runGame();
 	}
 	
-	public static void main(String[] args){			
-		SwingUtilities.invokeLater(new Runnable() {
+	public static void main(String[] args){
+		SwingUtilities.invokeLater(new Runnable() { //Run game on Event Dispatching Thread for safety
 			@Override
 			public void run() {
-				new brickout();
+				new brickout(); //let the constructor do the work
 			}
 		});
 	}
 	
-	public void runGame() {
+	public void runGame() { //Create a new/separate Thread to run our game on for Thread Safety
 		Thread loop = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				while(splash.isShowing()){  //Splash Loop
-					if(!splash.showing()){ //replace splash with gui
+				while(splash.isShowing()){  //SplashScreen Loop
+					if(!splash.showing()){ //replace splash with gui when triggered by a click
 						frame.remove(splash);
 						frame.add(gui, BorderLayout.CENTER);
 						frame.pack();
@@ -70,7 +87,7 @@ public class brickout {
 					if(gui.gameOver == false){ //active game loop
 						gui.gameLoop();
 						
-						if(gui.gameOver){
+						if(gui.gameOver){ //Create our HighScores Table, add to GUI and revalidate to display it
 							gui.createAndDisplayHighScores();
 							gui.revalidate();	
 						}
@@ -81,8 +98,7 @@ public class brickout {
 				}
 			}
 		});
-		loop.start();
-
+		loop.start(); //Call the run() method
 	}
 	
 	public void createNewGame(){ //get saved settings and create new game from those settings
@@ -289,6 +305,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			}
 		}
 		
+		bg.clearRect(0, 0, screenWidth, screenHeight);
 		bg.drawImage(background, 0, 0, screenWidth, screenHeight, this);
 		
 		if(!gameOver){
@@ -723,7 +740,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	
 	//high scores methods
 	public void createAndDisplayHighScores(){ //handles the creation, addition, and resizing of our High Scores Table/Title
-		InputStream highscores;
+		java.io.InputStream highscores;
 		highscores = GUI.class.getResourceAsStream("highscores.csv");
 		
 		String headerData[] = {"Name", "Score", "Level", "Time", "Avg Speed", "Locked?"}; //Default to Blank Header Data
@@ -936,8 +953,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		return true;
 	} 
 	public void updateHighScoresFile(Object[][] hsData){ //Creates/Overwrites the highscores file 	
-		try(FileWriter f = new FileWriter("highscores.csv"); 
-			BufferedWriter b = new BufferedWriter(f); PrintWriter p = new PrintWriter(b);) {
+		try(java.io.FileWriter 		f = new java.io.FileWriter("highscores.csv"); 
+			java.io.BufferedWriter 	b = new java.io.BufferedWriter(f); 
+			java.io.PrintWriter 	p = new java.io.PrintWriter(b); ){
 			
 			p.println("Name,Score,Level,Time,Avg Speed,Locked?"); //header
 			
