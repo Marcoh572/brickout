@@ -64,7 +64,7 @@ public class brickout {
 				}
 				
 				while(true){ //Game Loop		
-					if(gui.gameOver && gui.replay) 
+					if(gui.gameOver && gui.replay) //Create new game if Game Over and Replay is true
 						createNewGame();
 					
 					if(gui.gameOver == false){ //active game loop
@@ -105,7 +105,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	Graphics2D bg;
 	double ballsize = 30, brickheight, gameScale =  .75, paddleVX = 0;
 	double fpsTimer, startTime, gameTimer = 0, buffTimer = 0, totalSpeed, prevGameTime = 1;
-	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = true;
+	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = false;
 	boolean lockedEnabled = true, hsEligible = !cheatsActive, toggledLockedOff = !lockedEnabled;
 	Settings settings;
 	Rectangle2D bottomBar, scoreRect;
