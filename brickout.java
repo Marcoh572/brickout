@@ -1,5 +1,5 @@
 
-/************************************************************************************
+/*****************************************************************************************
 							Brickout - By: Marco Hernandez
 							Last Updated: March 27, 2019
 
@@ -10,7 +10,7 @@ I learned topics pertaining to Swing/Awt Applications, GUI Creation, KeyBindings
 Multi-Threading, File Management, Lambda Expressions, Anonymous Classes,
 and overall Object Oriented Techniques
 
-************************************************************************************/
+*****************************************************************************************/
 
 import java.awt.*; 
 import java.awt.image.BufferedImage;
@@ -50,22 +50,31 @@ public class brickout {
 			public void componentResized(ComponentEvent e){
 				Rectangle b = e.getComponent().getBounds(); //component size. As a rectangle
 				int titleHeight = frame.getInsets().top;
-				
-				if(b.width + titleHeight > monitorRect.height) //don't let the window get bigger than the monitor's height
+
+				if(b.height == monitorRect.height){ //fullscreen - let frame get big but keep our JPanels square
+					b.setBounds(0, 0, monitorRect.height, monitorRect.height);
+				}
+				else if(b.width + titleHeight > monitorRect.height){ //don't let the window get bigger than the monitor's height
 					frame.setSize(monitorRect.height - titleHeight*2, monitorRect.height - titleHeight);
-				else if(b.height != b.width + titleHeight) //enforce square windows
+					return; //prevent resizing panels twice
+				}
+				else if(b.height != b.width + titleHeight){ //enforce square windows
 					frame.setSize(b.width, b.width + titleHeight);
+					return; //prevent resizing panels twice
+				}
 				
-				if(gui.isShowing() && b.width < monitorRect.height){ //resize gui to fit inside frame
+				if(gui.isShowing() && b.width <= monitorRect.height){ //resize gui to fit inside frame
 					gui.setSize(b.width, b.width);
 					gui.resizeGUI(b.width/(double)ScreenWidth );
 				}
+				else
+					splash.setSize(b.width, b.width);
 			}
 		});
 		
 		frame.add(splash);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.setBackground(Color.black);
+		frame.getContentPane().setBackground(Color.black);
 		frame.setFocusTraversalKeysEnabled(false);
 		frame.pack();
 		//Open Window in Center Screen
@@ -1284,6 +1293,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				deactivateBuff();
 			break;
 		}
+		
+		if(paused) { repaint(); }
 	}
 	public void deactivateBuff(){ //deactivate and remove the current active powerup
 		switch (activePup.type){ //different actions for different active powerup types

@@ -6,7 +6,7 @@ APP_DIR_NAME=BrickoutMH_Mac.app
 
 #-deploy -Bruntime=/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home \
 javapackager \
-  -deploy -Bruntime=${JAVA_HOME} -Bicon=images/BrickoutMH.icns\
+  -deploy -Bruntime=${JAVA_HOME} -Bicon=images/gameLogo2.icns\
   -native image \
   --limit-modules java.base,java.desktop \
   -srcdir . \
