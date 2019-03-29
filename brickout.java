@@ -36,21 +36,40 @@ public class brickout {
 	static final int ScreenWidth = 1000, ScreenHeight = 1000;
 	
 	//global variables for frame and JComponents necessary to create new GUIs inside anonymous Runnable class
-	JFrame frame = new JFrame("BrickOut - By: Marco"); 
+	JFrame frame = new JFrame("BrickOut - By: Marco");
 	GUI gui = new GUI(ScreenWidth, ScreenHeight, null);
 	SplashScreen splash = new SplashScreen(ScreenWidth, ScreenHeight);
 	
 	public brickout(){ //Constructor adds components to our window and calls the game loop
+		GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+ 		GraphicsDevice monitor = (ge.getScreenDevices())[0];
+ 		Rectangle monitorRect = monitor.getConfigurations()[0].getBounds(); //Gets screensize of the monitor to center screen
+		
 		frame.addComponentListener(new ComponentAdapter(){ //deal with resizing of the window
 			@Override
-			public void componentResized(ComponentEvent e){						
-				frame.setSize(frame.getWidth(), frame.getWidth() + 22);
+			public void componentResized(ComponentEvent e){
+				Rectangle b = e.getComponent().getBounds(); //component size. As a rectangle
+				int titleHeight = frame.getInsets().top;
+				
+				if(b.width + titleHeight > monitorRect.height) //don't let the window get bigger than the monitor's height
+					frame.setSize(monitorRect.height - titleHeight*2, monitorRect.height - titleHeight);
+				else if(b.height != b.width + titleHeight) //enforce square windows
+					frame.setSize(b.width, b.width + titleHeight);
+				
+				if(gui.isShowing() && b.width < monitorRect.height){ //resize gui to fit inside frame
+					gui.setSize(b.width, b.width);
+					gui.resizeGUI(b.width/(double)ScreenWidth );
+				}
 			}
 		});
+		
 		frame.add(splash);
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		frame.setBackground(Color.black);
 		frame.setFocusTraversalKeysEnabled(false);
 		frame.pack();
+		//Open Window in Center Screen
+		frame.setLocation(monitorRect.width/2 - frame.getWidth()/2, monitorRect.height/2 - frame.getHeight()/2); 
 		frame.setVisible(true);
 		
 		runGame();
@@ -71,6 +90,10 @@ public class brickout {
 			public void run() {
 				while(splash.isShowing()){  //SplashScreen Loop
 					if(!splash.showing()){ //replace splash with gui when triggered by a click
+						if(gui.gameScale != splash.gameScale){ //retain splashScreen's size if it changed
+							gui.setPreferredSize(splash.getSize()); 
+							gui.resizeGUI(splash.gameScale);
+						}
 						frame.remove(splash);
 						frame.add(gui, BorderLayout.CENTER);
 						frame.pack();
@@ -119,7 +142,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	Point mousePos = null;
 	BufferedImage buffer, background, settingsIcon;
 	Graphics2D bg;
-	double ballsize = 30, brickheight, gameScale =  .75, paddleVX = 0;
+	double ballsize = 30, brickheight, gameScale =  .7, paddleVX = 0;
 	double fpsTimer, startTime, gameTimer = 0, buffTimer = 0, totalSpeed, prevGameTime = 1;
 	boolean paused = true, gameOver = false, replay = false, showDetails = true, cheatsActive = false;
 	boolean lockedEnabled = true, hsEligible = !cheatsActive, toggledLockedOff = !lockedEnabled;
@@ -168,16 +191,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		bg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		
 		setPreferredSize(new Dimension((int)(screenWidth * gameScale), (int)(screenHeight * gameScale)));		
-		addComponentListener(new ComponentAdapter(){
-			@Override
-			public void componentResized(ComponentEvent e){
-				Rectangle b = e.getComponent().getBounds();
-				bg.scale(1/gameScale, 1/gameScale);
-				gameScale = b.width/(double)screenWidth;
- 				bg.clearRect(0, 0, getWidth(), getHeight());
-				bg.scale(gameScale, gameScale);
-			}
-		}); //handle resizing of the window
 		
 		totalSpeed = paddleVX * 10;
 		fpsTimer = System.currentTimeMillis();
@@ -467,6 +480,12 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	}
 
 	//Game Setup Methods
+	public void resizeGUI(double newScale){ //Resizes GUI according to new given gameScale
+		bg.scale(1/gameScale, 1/gameScale); //scale our GUI back to normal
+		gameScale = newScale;
+		bg.clearRect(0, 0, getWidth(), getHeight());
+		bg.scale(gameScale, gameScale); //rescale GUI
+	}
 	public void initializeKeyBindings(){ //Create the initial keybindings and actions. May be overridden by Saved Settings
 		InputMap inputs = getInputMap(JPanel.WHEN_IN_FOCUSED_WINDOW);
 		ActionMap actions = getActionMap();
@@ -549,8 +568,10 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		});
 		actions.put("Cancel PowerUp", new AbstractAction(){ //deactivate the active powerup
 			public void actionPerformed(ActionEvent e){
-				if(activePup != null)
+				if(activePup != null){
 					deactivateBuff();
+					repaint();
+				}
 			}
 		});
 		actions.put("Replay", new AbstractAction(){ //toggle replay boolean when game is over
@@ -562,6 +583,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		actions.put("Show Details", new AbstractAction(){ //toggle boolean for displaying details
 			public void actionPerformed(ActionEvent e){
 				showDetails = !showDetails;
+				repaint();
 			}
 		});	
 		actions.put("Activate PowerUp 1", new AbstractAction(){
@@ -610,6 +632,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				}
 				else if(paddleVX < 10) //increase speed but not past maximum speed
 					settings.speedSlider.setValue((int)(paddleVX * 10) + 5);
+				repaint();
 			}
 		});
 		actions.put("Paddle Speed ↓ / Ball Angle", new AbstractAction(){
@@ -628,6 +651,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				}
 				else if(paddleVX > 3.5) //decrease speed but not past 3.5
 					settings.speedSlider.setValue((int)(paddleVX * 10) - 5);
+				repaint();
 			}
 		});
 		actions.put("Toggle Paddle AutoMove", new AbstractAction(){
@@ -641,16 +665,14 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				newBall.vy = -Math.hypot(balls.get(0).vx, balls.get(0).vy);
 				newBall.vx = 0;
 				balls.add(newBall);
+				repaint();
 			}
 		});
 		actions.put("Spawn PowerUp", new AbstractAction(){ //spawns a random powerup at center screen
 			public void actionPerformed(ActionEvent e){
-				//loseALife(balls.get(0));
-				//changeLevel();
 				pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
-				//pups.add(new PowerUp(paddle.x, paddle.y, PowerUp.Type.randomType()));
 				timeSinceLastBuff = 0;
-
+				repaint();
 			}
 		});		
 	}	
@@ -2246,7 +2268,7 @@ class Settings extends JTabbedPane implements ChangeListener, ActionListener{ //
 class SplashScreen extends JPanel implements MouseListener{ //Class that creates the splash screen you see at the beginning of the game
 	boolean showing = true;
 	int screenWidth, screenHeight;
-	double gameScale = .75;
+	double gameScale = .7;
 	BufferedImage buffer, background;
 	Graphics2D bg;
 	Font gameFont = new Font("Apple Chancery", Font.PLAIN, 100);
@@ -2270,6 +2292,7 @@ class SplashScreen extends JPanel implements MouseListener{ //Class that creates
 				gameScale = b.width/(double)screenWidth; //update gameScale
  				bg.clearRect(0,0,getWidth(), getHeight());
 				bg.scale(gameScale, gameScale); //Scale it to new gameScale
+				repaint();
 			}
 		});
 	}
