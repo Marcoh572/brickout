@@ -1,5 +1,5 @@
-#javac brickout.java
-#jar cfm BrickoutMH.jar Manifest.txt *
+javac brickout.java
+jar cfm BrickoutMH.jar Manifest.txt *
 
 JAVA_HOME=`/usr/libexec/java_home -v 9.0.4`
 APP_DIR_NAME=BrickoutMH_Mac.app
