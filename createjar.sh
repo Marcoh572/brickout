@@ -17,4 +17,4 @@ javapackager \
   -name "BrickoutMH" \
   -title "Brickout" \
   -nosign \
-  -v
+  #-v

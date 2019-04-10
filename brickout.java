@@ -27,6 +27,7 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 import javax.imageio.ImageIO;
+import java.io.File;
 import java.io.IOException;
 import java.util.*; 
 
@@ -207,112 +208,109 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	}
 
 	public void move(){
-		if (!paused && !gameOver){
-			if(System.currentTimeMillis() - startTime >= 10) //increase gameTimer every 1/100th of a second
-				gameTimer++;
-			
-			if(gameTimer % 100 == 99){ //every second, update the average speed
-				updateInstantAvgSpeed();
-				timeSinceLastBuff++; //increase timeSinceLastBuff every second
-			}
-			
-			if(timeSinceLastBuff > 120){ //spawn a powerup after 2 minutes without one
-				pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
-				timeSinceLastBuff = 0;
-			}
-			
-			if(activePup != null && (gameTimer >= buffTimer - 100 ||	//buffTimer - 100 so deactivates after 1 not 0
-								 	(activePup.type == PowerUp.Type.MULT_BALLS && balls.size() == 1)) ) //deactivate MultiBalls if only one ball left
-				deactivateBuff();
-			
-			paddle.move();
-			balls.forEach( ball ->{
-				if(ball.stuck)
-					ball.stickTo(paddle); //move stuck ball with paddle
-				else
-					ball.move();
-			}); //Only move the ball if it isn't stuck to a paddle
-			
-			//handles ball going offscreen, hitting the paddle, and hitting a brick
-			try{ 
-				for(Ball ball : balls){
-					if(ball.thisBall.getY() > bottomBar.getY() || ball.y + ballsize < 0){ //lose a life scenario for balls going past bottombar or powerballs going offscreen
-						loseALife(ball);
-						return;
+		if(System.currentTimeMillis() - startTime >= 10) //increase gameTimer every 1/100th of a second
+			gameTimer++;
+		
+		if(gameTimer % 100 == 99){ //every second, update the average speed
+			updateInstantAvgSpeed();
+			timeSinceLastBuff++; //increase timeSinceLastBuff every second
+		}
+		
+		if(timeSinceLastBuff > 120){ //spawn a powerup after 2 minutes without one
+			pups.add(new PowerUp(screenWidth/2, margin*(rows+1) + brickheight*rows + brickheight/2, PowerUp.Type.randomType()));
+			timeSinceLastBuff = 0;
+		}
+		
+		if(activePup != null && (gameTimer >= buffTimer - 100 ||	//buffTimer - 100 so deactivates after 1 not 0
+								(activePup.type == PowerUp.Type.MULT_BALLS && balls.size() == 1)) ) //deactivate MultiBalls if only one ball left
+			deactivateBuff();
+		
+		paddle.move();
+		balls.forEach( ball ->{
+			if(ball.stuck)
+				ball.stickTo(paddle); //move stuck ball with paddle
+			else
+				ball.move();
+		}); //Only move the ball if it isn't stuck to a paddle
+		
+		//handles ball going offscreen, hitting the paddle, and hitting a brick
+		try{ 
+			for(Ball ball : balls){
+				if(ball.thisBall.getY() > bottomBar.getY() || ball.y + ballsize < 0){ //lose a life scenario for balls going past bottombar or powerballs going offscreen
+					loseALife(ball);
+					return;
+				}
+				else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds2D()) && !ball.stuck){ //ball hits the paddle while moving/not stuck
+					ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width); //gives the ratio d/l to determine where the ball hit the paddle
+					ball.changeColor();
+					if(paddle.sticky){ //ball hits a sticky paddle
+						ball.stuck = true;
+						paddle.hasBallStuck = true;
+						ball.dx = paddle.x - ball.x; //used to track ball location relative to paddle's
+						ball.y = paddle.thisPaddle.getY() - ball.rad;
 					}
-					else if(paddle.thisPaddle.intersects(ball.thisBall.getBounds2D()) && !ball.stuck){ //ball hits the paddle while moving/not stuck
-						ball.hitThePaddle(paddle.width - (ball.x - paddle.thisPaddle.getX()), paddle.width); //gives the ratio d/l to determine where the ball hit the paddle
-						ball.changeColor();
-						if(paddle.sticky){ //ball hits a sticky paddle
-							ball.stuck = true;
-							paddle.hasBallStuck = true;
-							ball.dx = paddle.x - ball.x; //used to track ball location relative to paddle's
-							ball.y = paddle.thisPaddle.getY() - ball.rad;
-						}
-					}
-					else if(ball.thisBall.getY() <= lowestBrickY){ //check ball hitting a brick only if near lowest brick's y coord
-						for( Brick brick : exposedBricks ){
-							if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds2D())){ //only hit active bricks
-														
-								if(!ball.power){ //powerballs go through bricks
-									if( (ball.y >= brick.y + brick.height && ball.vy < 0) //ball is moving up and hits bottom of brick
-												 || (ball.y <= brick.y && ball.vy > 0) ){ //ball is moving down and hits top of brick
-										
-										ball.y = (ball.y <= brick.y) ? brick.y - ball.rad : brick.y + brick.height + ball.rad;
-										ball.vy = -ball.vy;
-									}
-									else if( (ball.x <= brick.x) || (ball.x >= brick.x + brick.width) ){ //ball hits brick from the sides
-										ball.x = (ball.x <= brick.x) ? brick.x - ball.rad : brick.x + brick.width + ball.rad;
-										ball.vx = -ball.vx;
-									}
-									else{ //ball's (x,y) is inside the brick
-										ball.vy = -1 * Math.abs(ball.vy); //ball goes down
-										ball.y += brick.y + brick.height - ball.y + ballsize;
-									}
+				}
+				else if(ball.thisBall.getY() <= lowestBrickY){ //check ball hitting a brick only if near lowest brick's y coord
+					for( Brick brick : exposedBricks ){
+						if(brick.active && brick.thisBrick.intersects(ball.thisBall.getBounds2D())){ //only hit active bricks
+													
+							if(!ball.power){ //powerballs go through bricks
+								if( (ball.y >= brick.y + brick.height && ball.vy < 0) //ball is moving up and hits bottom of brick
+											 || (ball.y <= brick.y && ball.vy > 0) ){ //ball is moving down and hits top of brick
+									
+									ball.y = (ball.y <= brick.y) ? brick.y - ball.rad : brick.y + brick.height + ball.rad;
+									ball.vy = -ball.vy;
 								}
-							
-								ball.changeColor();
-							
-								if(!brick.locked) //change color/type of the hit brick
-									brick.type--;
-							
-								if(ball.power){ //powerballs only
-									if(brick.locked)
-										numLocked--;
-									brick.deactivate();
-									removeExposedBrick(brick);
-									score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //score goes up relative to average speed
+								else if( (ball.x <= brick.x) || (ball.x >= brick.x + brick.width) ){ //ball hits brick from the sides
+									ball.x = (ball.x <= brick.x) ? brick.x - ball.rad : brick.x + brick.width + ball.rad;
+									ball.vx = -ball.vx;
 								}
-								else if(brick.type == -1){ //deactivate brick
-									brick.deactivate();
-									removeExposedBrick(brick);
-									rollBuff(brick);
-									score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //if average speed was 50 then score += 10 * 125%
+								else{ //ball's (x,y) is inside the brick
+									ball.vy = -1 * Math.abs(ball.vy); //ball goes down
+									ball.y += brick.y + brick.height - ball.y + ballsize;
 								}
-								else if (!brick.locked) //change color of brick if not removed
-									brick.setColor(colors[brick.type]);
-							
-								return;
 							}
+						
+							ball.changeColor();
+						
+							if(!brick.locked) //change color/type of the hit brick
+								brick.type--;
+						
+							if(ball.power){ //powerballs only
+								if(brick.locked)
+									numLocked--;
+								brick.deactivate();
+								removeExposedBrick(brick);
+								score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //score goes up relative to average speed
+							}
+							else if(brick.type == -1){ //deactivate brick
+								brick.deactivate();
+								removeExposedBrick(brick);
+								rollBuff(brick);
+								score += (int)Math.round(10 * (200 + getAvgSpeed())/200); //if average speed was 50 then score += 10 * 125%
+							}
+							else if (!brick.locked) //change color of brick if not removed
+								brick.setColor(colors[brick.type]);
+						
+							return;
 						}
-					}			
-				}
-			} catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
-			
-			if( pups.size() > storedPups ){ //got moving pups
-				for( PowerUp pup : pups ){
-					pup.move();
-					if(pup.pupRect.intersects(paddle.thisPaddle) && storedPups < 3){ //store pups collected by paddle if stored pups < 3
-						pup.stored = true;
-						pup.vy = 0;			//change location of stored pups
-						pup.setRect(screenWidth/2 + 100 + (storedPups * pup.width * 1.5), bottomBar.getY() + pup.height/2);
-						storedPups++;
 					}
-				}
-				//remove powerups that go past the bottom bar
-				pups.removeIf( pup -> (pup.y + pup.height/2 >= bottomBar.getY() && pup.vy != 0));
+				}			
 			}
-			
+		} catch(ConcurrentModificationException e){ System.out.println("Caught ConcurrentModificationException"); }
+		
+		if( pups.size() > storedPups ){ //got moving pups
+			for( PowerUp pup : pups ){
+				pup.move();
+				if(pup.pupRect.intersects(paddle.thisPaddle) && storedPups < 3){ //store pups collected by paddle if stored pups < 3
+					pup.stored = true;
+					pup.vy = 0;			//change location of stored pups
+					pup.setRect(screenWidth/2 + 100 + (storedPups * pup.width * 1.5), bottomBar.getY() + pup.height/2);
+					storedPups++;
+				}
+			}
+			//remove powerups that go past the bottom bar
+			pups.removeIf( pup -> (pup.y + pup.height/2 >= bottomBar.getY() && pup.vy != 0));
 		}
 	}
 
@@ -353,8 +351,6 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 				bg.drawString("x" + lives, 133 + (int)ballsize, (int)bottomBar.getY()  + getFontSize(bg));
 			} //more than 5 lives, show as a "Lives: ball x6"
 		
-			
-
 			if(activePup != null){ //draw active powerup
 				bg.setColor(glowingColor(Color.yellow)); //draw glowing border around the active powerup
 				bg.fill(new Rectangle2D.Double(activePup.pupRect.getX() - margin, activePup.pupRect.getY() - margin, 
@@ -437,7 +433,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			drawCentered(finalScore, screenHeight - (int)(bottomBar.getHeight()/2));
 			bg.setFont(gameFont.deriveFont(22f));
 			bg.setColor(Color.white);
-			drawCentered("( # of Bricks x 10 x (100 + Avg Speed/2)% )", screenHeight - 10);
+			if(showDetails){ drawCentered("( # of Bricks x 10 x (100 + Avg Speed/2)% )", screenHeight - 10); }
 			
 			if(settingsIcon != null) //draw settings icon from image if exists
 				bg.drawImage(settingsIcon, (int)settings.icon.getX(), (int)settings.icon.getY(), (int)settings.icon.getWidth(), (int)settings.icon.getHeight(), this);
@@ -478,11 +474,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		g.drawImage(buffer, null, 0, 0);
 	}
 
-	public void gameLoop(){
+	public void gameLoop(){ //called from outside GUI. Loops through game when not game over or paused
 		while(!gameOver){
 			if(!paused){
 				move();
-				repaint();
+				repaint(); //won't repaint if paused. Repainting while paused must be done manually
 			}
 			try{ Thread.sleep(brickout.timeStep); } catch (InterruptedException e) {}
 		}
@@ -771,8 +767,11 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	
 	//high scores methods
 	public void createAndDisplayHighScores(){ //handles the creation, addition, and resizing of our High Scores Table/Title
-		java.io.InputStream highscores;
-		highscores = GUI.class.getResourceAsStream("highscores.csv");
+	
+		String sourcePath = brickout.class.getProtectionDomain().getCodeSource().getLocation().getPath(); //get the path to where our game is run from
+		sourcePath = sourcePath.substring(0, sourcePath.lastIndexOf(File.separator) + 1); //makes sure the path always leads to a directory and not the jar if run from jar
+		
+		File highscores = new File(sourcePath + "highscores.csv");
 		
 		String headerData[] = {"Name", "Score", "Level", "Time", "Avg Speed", "Locked?"}; //Default to Blank Header Data
 		Object[][] hsData = { {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} , 
@@ -784,28 +783,31 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 							  {"-", Integer.valueOf(0), "-", "-", "-" ,"-"} 
 							}; //Default to Blank High Score Data
 		
-		if(highscores != null){
-			Scanner reader = new Scanner(highscores);
+		if(highscores.exists()){
+			try{
+				//System.out.println("File Exists at: " + highscores.getAbsolutePath());
+				Scanner reader = new Scanner(highscores);
 				
-			if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); } //populate header data from file
+				if(reader.hasNextLine()) { headerData = reader.nextLine().split(","); } //populate header data from file
 				
-			int row = 0;
-			while(reader.hasNextLine()){
-				String linedata[] = reader.nextLine().split(","); //get the line data split by the comma
-				for( int col = 0; col < linedata.length; col++){
-					switch(col){ //populate the table data arrays row by row
-						case 0: hsData[row][col] = linedata[col]; break; //Name
-						case 1: hsData[row][col] = linedata[col].equals("-") ? Integer.valueOf(0) : Integer.valueOf(linedata[col]); break; //Score
-						case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]); break; //Level
-						case 3: hsData[row][col] = linedata[col]; break; //Time
-						case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
-						case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
+				int row = 0;
+				while(reader.hasNextLine()){
+					String linedata[] = reader.nextLine().split(","); //get the line data split by the comma
+					for( int col = 0; col < linedata.length; col++){
+						switch(col){ //populate the table data arrays row by row
+							case 0: hsData[row][col] = linedata[col]; break; //Name
+							case 1: hsData[row][col] = linedata[col].equals("-") ? Integer.valueOf(0) : Integer.valueOf(linedata[col]); break; //Score
+							case 2: hsData[row][col] = linedata[col].equals("-") ? "-" : Integer.valueOf(linedata[col]); break; //Level
+							case 3: hsData[row][col] = linedata[col]; break; //Time
+							case 4: hsData[row][col] = linedata[col].equals("-") ? "-" : Double.valueOf(linedata[col]);	break; //Speed
+							case 5: hsData[row][col] = linedata[col]; break; //Locked Bricks
+						}
 					}
-				}
-				row++; //at the end of the column, move to the next row
-			} //populate high score table data from file
+					row++; //at the end of the column, move to the next row
+				} //populate high score table data from file
 			
-			reader.close();
+				reader.close();
+			} catch(java.io.FileNotFoundException e){}
 		} //replace defaults with file input if file exists
 		
 		int rowIndex = -1; //row index of new high score
@@ -890,7 +892,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 			
 			hsTable.setValueAt(name, rowIndex, 0); 	//update the "..." to a valid name
 			resizeTableCols(hsTable);				//resize the table to accomodate new name
-			updateHighScoresFile(hsData);			//now that the table data is correct, update the file
+			updateHighScoresFile(hsData, highscores);	//now that the table data is correct, update the file
 		}
 		
 	} 
@@ -962,6 +964,7 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 		table.setRowHeight(tableFM.getHeight() + 5);	
 	} 
 	public void newHighScore(Object[][] hsData){ //Replaces the last high score with the new one and sorts it
+		
 		//Data for the new highscore. Name to be entered after to account for tableWidth changes
 		Object newHS[] = { "...", Integer.valueOf(score), Integer.valueOf(level), getTime(), 
 							Double.valueOf(getAvgSpeed()), toggledLockedOff ? "No" : "Yes" };
@@ -983,8 +986,9 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 	
 		return true;
 	} 
-	public void updateHighScoresFile(Object[][] hsData){ //Creates/Overwrites the highscores file 	
-		try(java.io.FileWriter 		f = new java.io.FileWriter("highscores.csv"); 
+	public void updateHighScoresFile(Object[][] hsData, File hsFile){ //Creates/Overwrites the highscores file given (must give file to create at correct path)
+		
+		try(java.io.FileWriter 		f = new java.io.FileWriter(hsFile); 
 			java.io.BufferedWriter 	b = new java.io.BufferedWriter(f); 
 			java.io.PrintWriter 	p = new java.io.PrintWriter(b); ){
 			
@@ -998,6 +1002,8 @@ class GUI extends JPanel implements MouseListener, MouseMotionListener {
 						p.println(hsData[i][j]);				
 				}
 			}
+			
+			//System.out.println("File created at: " + hsFile.getAbsolutePath());
 			
 			p.close();
 				
